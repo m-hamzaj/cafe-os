@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cafeos
+      POSTGRES_PASSWORD: cafeos
+      POSTGRES_DB: cafeos
+    ports:
+      # 5433, not 5432 -- the documents-api project's own postgres
+      # container is already running on the default port.
+      - "5433:5432"
+    volumes:
+      - cafeos_pgdata:/var/lib/postgresql/data
+
+volumes:
+  cafeos_pgdata:

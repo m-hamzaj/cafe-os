@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  /* Owner/dashboard mode: calm, warm, data-forward. */
+  --bg: #f6f3ec;
+  --surface: #ffffff;
+  --ink: #241f1a;
+  --muted: #7a7267;
+  --line: #e4ddd0;
+  --brand: #2f4a3c;      /* deep spruce green -- the "cafe" color, deliberately not brown/terracotta */
+  --accent: #d79b3c;     /* warm amber, used sparingly for emphasis/CTAs */
+  --accent-ink: #241f1a;
+  --good: #3a6b4c;
+  --warn: #b5541f;
+}
+
+[data-mode="counter"] {
+  /* Order-taking mode: dark, high-contrast, built for speed under a rush. */
+  --bg: #15201a;
+  --surface: #1d2b23;
+  --ink: #f3efe6;
+  --muted: #9fb0a5;
+  --line: #2c3c32;
+  --brand: #e8c77e;      /* amber reads as the primary accent on dark */
+  --accent: #e8c77e;
+  --accent-ink: #15201a;
+  --good: #7fd19a;
+  --warn: #e8946a;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-plex-sans);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* Large, deliberate touch targets for the counter screen -- a cashier
+   taps fast, under pressure, sometimes one-handed. */
+[data-mode="counter"] button {
+  touch-action: manipulation;
+}
