@@ -93,17 +93,43 @@ async function getBottomSellers(limit: number): Promise<TopSeller[]> {
 }
 
 async function getStockRunway(): Promise<StockRunway[]> {
+  // Mirrors createPaidOrder: per line, an ingredient's use is the recipe plus
+  // the chosen options' adjustments, floored at zero, times the quantity.
+  // Adjustments are read from the option's current definition, and an option
+  // deleted since the sale no longer contributes.
   const rows = await sql`
+    with recent_lines as (
+      select ol.id, ol.menu_item_id, ol.quantity
+      from order_lines ol
+      join orders o on o.id = ol.order_id
+      where o.status = 'paid' and o.created_at >= now() - (${LOOKBACK_DAYS} || ' days')::interval
+    ),
+    per_unit as (
+      select l.id as order_line_id, l.quantity, r.inventory_item_id, r.quantity_used as amount
+      from recent_lines l
+      join recipe_lines r on r.menu_item_id = l.menu_item_id
+      union all
+      select l.id, l.quantity, a.inventory_item_id, a.quantity_delta
+      from recent_lines l
+      join order_line_options olo on olo.order_line_id = l.id
+      join option_recipe_adjustments a on a.option_id = olo.option_id
+    ),
+    line_usage as (
+      select inventory_item_id, greatest(sum(amount), 0) * quantity as used
+      from per_unit
+      group by order_line_id, quantity, inventory_item_id
+    ),
+    total_usage as (
+      select inventory_item_id, sum(used) as used
+      from line_usage
+      group by inventory_item_id
+    )
     select i.name as inventory_item_name,
            i.unit,
            i.current_stock,
-           coalesce(sum(r.quantity_used * ol.quantity), 0) / ${LOOKBACK_DAYS}::numeric as daily_rate
+           coalesce(u.used, 0) / ${LOOKBACK_DAYS}::numeric as daily_rate
     from inventory_items i
-    left join recipe_lines r on r.inventory_item_id = i.id
-    left join order_lines ol on ol.menu_item_id = r.menu_item_id
-    left join orders o on o.id = ol.order_id
-      and o.status = 'paid' and o.created_at >= now() - (${LOOKBACK_DAYS} || ' days')::interval
-    group by i.id, i.name, i.unit, i.current_stock
+    left join total_usage u on u.inventory_item_id = i.id
     order by i.name
   `;
   return rows.map((r) => {

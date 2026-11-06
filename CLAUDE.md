@@ -16,6 +16,10 @@ sessions).
   not a flat per-item stock count. Any new feature touching inventory
   must go through this relationship, not add a parallel stock-tracking
   path.
+- **Menu options adjust the recipe, they don't replace it.** A chosen
+  option's `option_recipe_adjustments` are signed changes on top of
+  `recipe_lines`. `createPaidOrder()` and `getStockRunway()` must apply
+  them the same way: per line, floored at zero, times quantity.
 - **`lib/llm/insights.ts` never invents a number.** It narrates exactly
   what `lib/queries/insights.ts` computed from real SQL — same contract
   as the sibling `gig-tax-calculator` project's AI explanation layer. If
@@ -25,7 +29,12 @@ sessions).
   `lib/queries/orders.ts` lets stock go negative rather than refuse a
   sale — a cafe counter can't turn away a paying customer over a
   bookkeeping discrepancy. Negative/low stock is surfaced as an alert,
-  never as a checkout error.
+  never as a checkout error. An option marked out of stock follows the
+  same rule: the counter stops offering it, the order API still accepts it.
+  Cashiers can flip that switch (`PATCH /api/menu/options/[id]`), so the
+  owner's editor only sends stock status when the owner changed it. The
+  flip can also apply across the menu, matching on option name plus group
+  name; `setOptionAvailability()` and `otherItemsToSync()` must agree on that.
 - **Cache Components is off** (`next.config.ts`) — this whole app is
   authenticated, per-request data with nothing to statically prerender.
   Don't re-enable it without restructuring every data-fetching page

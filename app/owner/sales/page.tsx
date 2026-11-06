@@ -40,6 +40,7 @@ export default async function OwnerSalesPage() {
                 {order.lines.map((l, i) => (
                   <li key={i}>
                     {l.quantity}× {l.menuItemName}
+                    {l.optionNames.length > 0 && ` (${l.optionNames.join(", ")})`}
                   </li>
                 ))}
               </ul>

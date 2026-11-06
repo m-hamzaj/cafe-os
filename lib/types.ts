@@ -6,6 +6,31 @@ export interface MenuItem {
   isAvailable: boolean;
 }
 
+export interface OptionAdjustment {
+  inventoryItemId: number;
+  quantityDelta: number;
+}
+
+export interface MenuOption {
+  id: number;
+  name: string;
+  priceDeltaCents: number;
+  isAvailable: boolean;
+  adjustments: OptionAdjustment[];
+}
+
+export interface MenuOptionGroup {
+  id: number;
+  name: string;
+  isRequired: boolean;
+  allowsMultiple: boolean;
+  options: MenuOption[];
+}
+
+export interface MenuItemWithOptions extends MenuItem {
+  optionGroups: MenuOptionGroup[];
+}
+
 export interface InventoryItem {
   id: number;
   name: string;
@@ -26,6 +51,7 @@ export type PaymentMethod = "cash" | "card";
 export interface OrderLineInput {
   menuItemId: number;
   quantity: number;
+  optionIds: number[];
 }
 
 export interface Order {
@@ -43,5 +69,6 @@ export interface OrderWithLines extends Order {
     menuItemName: string;
     quantity: number;
     unitPriceCents: number;
+    optionNames: string[];
   }>;
 }

@@ -17,18 +17,18 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-bg">
-      <header className="flex items-center justify-between border-b border-line px-6 py-4">
-        <div className="flex items-center gap-8">
+      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-line px-4 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
           <span className="font-display text-xl font-semibold text-ink">cafe-os</span>
-          <nav className="flex gap-5 text-sm text-muted">
+          <nav className="flex shrink-0 gap-5 overflow-x-auto text-sm text-muted">
             {NAV.map((n) => (
-              <Link key={n.href} href={n.href} className="hover:text-ink">
+              <Link key={n.href} href={n.href} className="shrink-0 hover:text-ink">
                 {n.label}
               </Link>
             ))}
           </nav>
         </div>
-        <div className="flex items-center gap-4 text-sm text-muted">
+        <div className="flex shrink-0 items-center gap-3 text-sm text-muted">
           <span>{session.name}</span>
           <OwnerLogoutButton />
         </div>
