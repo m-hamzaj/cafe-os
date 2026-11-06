@@ -37,6 +37,41 @@ create table if not exists recipe_lines (
   primary key (menu_item_id, inventory_item_id)
 );
 
+-- Choices a cashier makes when selling a menu item (Milk: Whole/Oat,
+-- Extras: Extra shot). Groups belong to one menu item rather than being
+-- shared, because the ingredient effect depends on the item: oat milk
+-- replaces 200 ml in a latte but 150 ml in a cappuccino.
+create table if not exists menu_option_groups (
+  id              serial primary key,
+  menu_item_id    integer not null references menu_items(id) on delete cascade,
+  name            text not null,
+  is_required     boolean not null default false,
+  allows_multiple boolean not null default false,
+  sort_order      integer not null default 0
+);
+
+create table if not exists menu_options (
+  id                serial primary key,
+  group_id          integer not null references menu_option_groups(id) on delete cascade,
+  name              text not null,
+  price_delta_cents integer not null default 0,
+  sort_order        integer not null default 0
+);
+
+-- A switch any staff member can flip when an option runs out. It only stops the option
+-- being offered at the counter; see createPaidOrder for why it never blocks a
+-- sale. Separate from the create above so existing databases pick it up.
+alter table menu_options add column if not exists is_available boolean not null default true;
+
+-- How choosing an option changes what one unit consumes, relative to the
+-- item's recipe_lines. Signed: oat milk is Milk -200, Oat milk +200.
+create table if not exists option_recipe_adjustments (
+  option_id         integer not null references menu_options(id) on delete cascade,
+  inventory_item_id integer not null references inventory_items(id) on delete cascade,
+  quantity_delta    numeric not null check (quantity_delta <> 0),
+  primary key (option_id, inventory_item_id)
+);
+
 create table if not exists orders (
   id              serial primary key,
   status          text not null default 'open' check (status in ('open', 'paid', 'cancelled')),
@@ -56,6 +91,18 @@ create table if not exists order_lines (
   unit_price_cents  integer not null
 );
 
+-- The options chosen on a sold line. Names and price are captured at sale
+-- time, like order_lines.unit_price_cents, so editing or deleting an option
+-- never rewrites order history. unit_price_cents already includes the deltas.
+create table if not exists order_line_options (
+  id                serial primary key,
+  order_line_id     integer not null references order_lines(id) on delete cascade,
+  option_id         integer references menu_options(id) on delete set null,
+  group_name        text not null,
+  option_name       text not null,
+  price_delta_cents integer not null
+);
+
 -- Manual restock entries -- a log of stock-in events, kept separate from
 -- a bare UPDATE on inventory_items.current_stock so there's an audit
 -- trail of when and how much was restocked.
@@ -70,3 +117,7 @@ create index if not exists idx_order_lines_order_id on order_lines(order_id);
 create index if not exists idx_order_lines_menu_item_id on order_lines(menu_item_id);
 create index if not exists idx_orders_created_at on orders(created_at);
 create index if not exists idx_stock_entries_inventory_item_id on stock_entries(inventory_item_id);
+create index if not exists idx_menu_option_groups_menu_item_id on menu_option_groups(menu_item_id);
+create index if not exists idx_menu_options_group_id on menu_options(group_id);
+create index if not exists idx_order_line_options_order_line_id on order_line_options(order_line_id);
+create index if not exists idx_order_line_options_option_id on order_line_options(option_id);

@@ -1,6 +1,7 @@
 /**
- * Seeds a realistic demo: staff, an 10-item menu across 4 categories,
- * 8 ingredients with real recipe_lines, starting stock, and ~8 days of
+ * Seeds a realistic demo: staff, a 9-item menu across 4 categories with
+ * options on the milk drinks, 8 ingredients with real recipe_lines,
+ * starting stock, and ~8 days of
  * backdated order history so the insights panel (top/slow sellers,
  * stock runway, sales delta) has real data to narrate on first load
  * instead of an empty dashboard.
@@ -17,7 +18,7 @@ async function main() {
   await sql.unsafe(schemaSql);
 
   console.log("Clearing existing demo data (safe to re-run)...");
-  await sql`truncate table order_lines, orders, stock_entries, recipe_lines, menu_items, inventory_items, staff restart identity cascade`;
+  await sql`truncate table order_line_options, order_lines, orders, stock_entries, option_recipe_adjustments, menu_options, menu_option_groups, recipe_lines, menu_items, inventory_items, staff restart identity cascade`;
 
   console.log("Seeding staff...");
   const ownerPinHash = await hashPin("1234");
@@ -61,7 +62,6 @@ async function main() {
     { name: "Latte", category: "Coffee", priceCents: 400, recipe: [["Espresso beans", 18], ["Milk", 200]] },
     { name: "Cappuccino", category: "Coffee", priceCents: 400, recipe: [["Espresso beans", 18], ["Milk", 150]] },
     { name: "Americano", category: "Coffee", priceCents: 300, recipe: [["Espresso beans", 18]] },
-    { name: "Oat Milk Latte", category: "Coffee", priceCents: 450, recipe: [["Espresso beans", 18], ["Oat milk", 200]] },
     { name: "Chai Latte", category: "Tea", priceCents: 350, recipe: [["Chai concentrate", 150], ["Milk", 100]] },
     { name: "Croissant", category: "Pastries", priceCents: 300, recipe: [["Croissant", 1]] },
     { name: "Blueberry Muffin", category: "Pastries", priceCents: 325, recipe: [["Blueberry muffin", 1]] },
@@ -86,10 +86,62 @@ async function main() {
     }
   }
 
+  console.log("Seeding menu options...");
+  type SeedOption = { name: string; priceDeltaCents: number; adjustments: Array<[string, number]> };
+  type SeedGroup = { name: string; isRequired: boolean; allowsMultiple: boolean; options: SeedOption[] };
+
+  const milkGroup = (ml: number): SeedGroup => ({
+    name: "Milk",
+    isRequired: true,
+    allowsMultiple: false,
+    options: [
+      { name: "Whole", priceDeltaCents: 0, adjustments: [] },
+      { name: "Oat", priceDeltaCents: 50, adjustments: [["Milk", -ml], ["Oat milk", ml]] },
+    ],
+  });
+  const extrasGroup: SeedGroup = {
+    name: "Extras",
+    isRequired: false,
+    allowsMultiple: true,
+    options: [{ name: "Extra shot", priceDeltaCents: 75, adjustments: [["Espresso beans", 18]] }],
+  };
+  const optionSeed: Record<string, SeedGroup[]> = {
+    Latte: [milkGroup(200), extrasGroup],
+    Cappuccino: [milkGroup(150), extrasGroup],
+    "Chai Latte": [milkGroup(100)],
+    Americano: [extrasGroup],
+  };
+
+  const optionIds = new Map<string, number>();
+  for (const [menuName, groups] of Object.entries(optionSeed)) {
+    for (const [groupIndex, group] of groups.entries()) {
+      const [groupRow] = await sql`
+        insert into menu_option_groups (menu_item_id, name, is_required, allows_multiple, sort_order)
+        values (${menuIds[menuName]}, ${group.name}, ${group.isRequired}, ${group.allowsMultiple}, ${groupIndex})
+        returning id
+      `;
+      for (const [optionIndex, option] of group.options.entries()) {
+        const [optionRow] = await sql`
+          insert into menu_options (group_id, name, price_delta_cents, sort_order)
+          values (${groupRow.id}, ${option.name}, ${option.priceDeltaCents}, ${optionIndex})
+          returning id
+        `;
+        optionIds.set(`${menuName}/${group.name}/${option.name}`, optionRow.id);
+        for (const [ingredientName, delta] of option.adjustments) {
+          await sql`
+            insert into option_recipe_adjustments (option_id, inventory_item_id, quantity_delta)
+            values (${optionRow.id}, ${inventoryIds[ingredientName]}, ${delta})
+          `;
+        }
+      }
+    }
+  }
+
   console.log("Seeding 8 days of order history...");
   // Weighted so Latte/Cappuccino/Espresso sell well, Chai/Banana Bread
   // sell slowly -- gives the insights panel a real top/slow-seller split
-  // to narrate instead of flat, meaningless data.
+  // to narrate instead of flat, meaningless data. "Oat Milk Latte" isn't a
+  // menu item: it stands for a Latte sold with the Oat option below.
   const weighted: Array<[string, number]> = [
     ["Latte", 10],
     ["Cappuccino", 8],
@@ -147,12 +199,40 @@ async function main() {
         returning id
       `;
 
-      for (const [name, quantity] of chosen) {
-        await sql`
+      for (const [saleName, quantity] of chosen) {
+        const isOat = saleName === "Oat Milk Latte";
+        const name = isOat ? "Latte" : saleName;
+
+        // Every required group gets its first option (or Oat), matching what
+        // the counter sends. Seeded history leaves optional extras unchosen.
+        const selected = (optionSeed[name] ?? [])
+          .filter((g) => g.isRequired)
+          .map((g) => ({
+            group: g,
+            option: (isOat && g.options.find((o) => o.name === "Oat")) || g.options[0],
+          }));
+        const unitPrice = selected.reduce((sum, s) => sum + s.option.priceDeltaCents, menuPrices[name]);
+
+        const [lineRow] = await sql`
           insert into order_lines (order_id, menu_item_id, quantity, unit_price_cents)
-          values (${orderRow.id}, ${menuIds[name]}, ${quantity}, ${menuPrices[name]})
+          values (${orderRow.id}, ${menuIds[name]}, ${quantity}, ${unitPrice})
+          returning id
         `;
-        for (const [ingredientName, qtyPerUnit] of menuSeed.find((m) => m.name === name)!.recipe) {
+        for (const { group, option } of selected) {
+          await sql`
+            insert into order_line_options (order_line_id, option_id, group_name, option_name, price_delta_cents)
+            values (
+              ${lineRow.id}, ${optionIds.get(`${name}/${group.name}/${option.name}`)!},
+              ${group.name}, ${option.name}, ${option.priceDeltaCents}
+            )
+          `;
+        }
+
+        const ingredientUse: Array<readonly [string, number]> = [
+          ...menuSeed.find((m) => m.name === name)!.recipe,
+          ...selected.flatMap((s) => s.option.adjustments),
+        ];
+        for (const [ingredientName, qtyPerUnit] of ingredientUse) {
           await sql`
             update inventory_items set current_stock = current_stock - ${qtyPerUnit * quantity}
             where id = ${inventoryIds[ingredientName]}

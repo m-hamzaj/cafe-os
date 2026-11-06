@@ -54,8 +54,9 @@ npm install
 npm run db:seed
 ```
 
-This applies `db/schema.sql`, creates two demo staff logins, a 10-item
-menu across 4 categories with real ingredient recipes, and 8 days of
+This applies `db/schema.sql`, creates two demo staff logins, a 9-item
+menu across 4 categories with real ingredient recipes and options on the
+milk drinks, and 8 days of
 backdated order history — so the insights panel has real data to narrate
 on first load instead of an empty dashboard.
 
@@ -97,7 +98,8 @@ scripts/
 Selling a menu item decrements the *actual ingredients* it consumes via
 `recipe_lines` (e.g. a latte decrements milk + coffee beans), not a
 generic per-item stock count — this is what makes low-stock alerts and
-AI insights genuinely useful instead of cosmetic.
+AI insights genuinely useful instead of cosmetic. Menu options adjust that
+same recipe when chosen: oat milk on a latte is Milk −200, Oat milk +200.
 
 ## Tests / verification
 

@@ -1,38 +1,58 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-
-interface MenuItem {
-  id: number;
-  name: string;
-  category: string;
-  priceCents: number;
-  isAvailable: boolean;
-}
+import OptionPicker from "@/components/OptionPicker";
+import type { MenuItemWithOptions, MenuOption } from "@/lib/types";
 
 interface CartLine {
+  // The same item with different options is a separate line.
+  key: string;
   menuItemId: number;
+  optionIds: number[];
+  optionNames: string[];
   name: string;
   priceCents: number;
   quantity: number;
 }
+
+// How quickly an open counter notices the owner changing the menu, such as
+// marking an option out of stock.
+const MENU_REFRESH_MS = 30_000;
 
 function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
 export default function OrderScreen() {
-  const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [menu, setMenu] = useState<MenuItemWithOptions[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
+  // An id, not the item, so an open picker sees stock changes as they arrive.
+  const [pickingId, setPickingId] = useState<number | null>(null);
+  const picking = menu.find((m) => m.id === pickingId);
   const [category, setCategory] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastOrderTotal, setLastOrderTotal] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/menu")
-      .then((r) => r.json())
-      .then((data) => setMenu(data.items ?? []));
+    let active = true;
+    async function loadMenu() {
+      try {
+        const res = await fetch("/api/menu");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active) setMenu(data.items ?? []);
+      } catch {
+        // Keep showing the last menu; a failed refresh shouldn't empty the
+        // screen mid-shift. The next interval tries again.
+      }
+    }
+    loadMenu();
+    const timer = setInterval(loadMenu, MENU_REFRESH_MS);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
   const categories = useMemo(() => Array.from(new Set(menu.map((m) => m.category))), [menu]);
@@ -42,21 +62,65 @@ export default function OrderScreen() {
   );
   const totalCents = cart.reduce((sum, l) => sum + l.priceCents * l.quantity, 0);
 
-  function addToCart(item: MenuItem) {
+  function addToCart(item: MenuItemWithOptions, selected: MenuOption[]) {
     setLastOrderTotal(null);
+    const optionIds = selected.map((o) => o.id).sort((a, b) => a - b);
+    const key = `${item.id}:${optionIds.join(",")}`;
     setCart((prev) => {
-      const existing = prev.find((l) => l.menuItemId === item.id);
+      const existing = prev.find((l) => l.key === key);
       if (existing) {
-        return prev.map((l) => (l.menuItemId === item.id ? { ...l, quantity: l.quantity + 1 } : l));
+        return prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + 1 } : l));
       }
-      return [...prev, { menuItemId: item.id, name: item.name, priceCents: item.priceCents, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          key,
+          menuItemId: item.id,
+          optionIds,
+          optionNames: selected.map((o) => o.name),
+          name: item.name,
+          priceCents: Math.max(0, selected.reduce((sum, o) => sum + o.priceDeltaCents, item.priceCents)),
+          quantity: 1,
+        },
+      ];
     });
   }
 
-  function changeQuantity(menuItemId: number, delta: number) {
+  function tapItem(item: MenuItemWithOptions) {
+    if (item.optionGroups.length > 0) setPickingId(item.id);
+    else addToCart(item, []);
+  }
+
+  async function setOptionStock(optionId: number, isAvailable: boolean, acrossMenu: boolean): Promise<boolean> {
+    let changedIds: Set<number>;
+    try {
+      const res = await fetch(`/api/menu/options/${optionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isAvailable, acrossMenu }),
+      });
+      if (!res.ok) return false;
+      const body: { optionIds: number[] } = await res.json();
+      changedIds = new Set(body.optionIds);
+    } catch {
+      return false;
+    }
+    setMenu((prev) =>
+      prev.map((item) => ({
+        ...item,
+        optionGroups: item.optionGroups.map((group) => ({
+          ...group,
+          options: group.options.map((o) => (changedIds.has(o.id) ? { ...o, isAvailable } : o)),
+        })),
+      }))
+    );
+    return true;
+  }
+
+  function changeQuantity(key: string, delta: number) {
     setCart((prev) =>
       prev
-        .map((l) => (l.menuItemId === menuItemId ? { ...l, quantity: l.quantity + delta } : l))
+        .map((l) => (l.key === key ? { ...l, quantity: l.quantity + delta } : l))
         .filter((l) => l.quantity > 0)
     );
   }
@@ -69,7 +133,7 @@ export default function OrderScreen() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        lines: cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+        lines: cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, optionIds: l.optionIds })),
         paymentMethod,
       }),
     });
@@ -114,11 +178,14 @@ export default function OrderScreen() {
           {visibleItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => addToCart(item)}
+              onClick={() => tapItem(item)}
               className="flex flex-col items-start gap-1 rounded-2xl border border-line bg-surface p-4 text-left transition-transform active:scale-95"
             >
               <span className="text-base font-medium text-ink">{item.name}</span>
-              <span className="text-sm text-muted">{formatCents(item.priceCents)}</span>
+              <span className="text-sm text-muted">
+                {formatCents(item.priceCents)}
+                {item.optionGroups.length > 0 && " · options"}
+              </span>
             </button>
           ))}
         </div>
@@ -132,21 +199,22 @@ export default function OrderScreen() {
           ) : (
             <ul className="flex flex-col gap-3">
               {cart.map((l) => (
-                <li key={l.menuItemId} className="flex items-center justify-between gap-2">
+                <li key={l.key} className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{l.name}</p>
+                    {l.optionNames.length > 0 && <p className="text-xs text-ink">{l.optionNames.join(", ")}</p>}
                     <p className="text-xs text-muted">{formatCents(l.priceCents)} each</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <button
-                      onClick={() => changeQuantity(l.menuItemId, -1)}
+                      onClick={() => changeQuantity(l.key, -1)}
                       className="h-7 w-7 rounded-full border border-line text-ink"
                     >
                       −
                     </button>
                     <span className="w-4 text-center text-sm text-ink">{l.quantity}</span>
                     <button
-                      onClick={() => changeQuantity(l.menuItemId, 1)}
+                      onClick={() => changeQuantity(l.key, 1)}
                       className="h-7 w-7 rounded-full border border-line text-ink"
                     >
                       +
@@ -187,6 +255,20 @@ export default function OrderScreen() {
           </div>
         </div>
       </div>
+
+      {picking && (
+        <OptionPicker
+          key={picking.id}
+          item={picking}
+          menu={menu}
+          onAdd={(selected) => {
+            addToCart(picking, selected);
+            setPickingId(null);
+          }}
+          onClose={() => setPickingId(null)}
+          onSetStock={setOptionStock}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
-import { getAvailableMenuItems, getMenuItems, createMenuItem } from "@/lib/queries/menu";
+import { getAvailableMenuItems, getMenuItems, createMenuItem, getOptionGroups } from "@/lib/queries/menu";
 import { menuItemSchema } from "@/lib/validation";
 
 export async function GET(request: Request) {
@@ -10,7 +10,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const all = url.searchParams.get("all") === "1";
   const items = all ? await getMenuItems() : await getAvailableMenuItems();
-  return NextResponse.json({ items });
+  const optionGroups = await getOptionGroups(items.map((i) => i.id));
+  return NextResponse.json({
+    items: items.map((i) => ({ ...i, optionGroups: optionGroups.get(i.id) ?? [] })),
+  });
 }
 
 export async function POST(request: Request) {

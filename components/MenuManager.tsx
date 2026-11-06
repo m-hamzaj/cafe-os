@@ -1,6 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import type { MenuOptionGroup } from "@/lib/types";
+import OptionGroupsEditor, {
+  toDraftGroups,
+  toOptionGroupInput,
+  type DraftGroup,
+} from "@/components/OptionGroupsEditor";
 
 interface MenuItem {
   id: number;
@@ -40,6 +46,7 @@ export default function MenuManager({
   const [items, setItems] = useState(initialMenuItems);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [recipeByItem, setRecipeByItem] = useState<Record<number, RecipeLine[]>>({});
+  const [optionsByItem, setOptionsByItem] = useState<Record<number, DraftGroup[]>>({});
   const [draft, setDraft] = useState<{ name: string; category: string; price: string; isAvailable: boolean }>({
     name: "",
     category: "",
@@ -52,17 +59,32 @@ export default function MenuManager({
   async function startEdit(item: MenuItem) {
     setEditingId(item.id);
     setDraft({ name: item.name, category: item.category, price: centsToDollars(item.priceCents), isAvailable: item.isAvailable });
-    if (!recipeByItem[item.id]) {
-      const res = await fetch(`/api/menu/${item.id}`);
-      const body = await res.json();
-      setRecipeByItem((prev) => ({
-        ...prev,
-        [item.id]: body.recipe.map((r: { inventoryItemId: number; quantityUsed: number }) => ({
-          inventoryItemId: r.inventoryItemId,
-          quantityUsed: r.quantityUsed,
-        })),
-      }));
-    }
+    // Always reload rather than reuse the last draft: new options only get
+    // their ids from the server, and saving without those ids would re-create
+    // them. Clearing first also keeps Save disabled until this load lands.
+    setRecipeByItem((prev) => {
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
+    setOptionsByItem((prev) => {
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
+    const res = await fetch(`/api/menu/${item.id}`);
+    const body: {
+      recipe: Array<{ inventoryItemId: number; quantityUsed: number }>;
+      optionGroups: MenuOptionGroup[];
+    } = await res.json();
+    setRecipeByItem((prev) => ({
+      ...prev,
+      [item.id]: body.recipe.map((r) => ({
+        inventoryItemId: r.inventoryItemId,
+        quantityUsed: r.quantityUsed,
+      })),
+    }));
+    setOptionsByItem((prev) => ({ ...prev, [item.id]: toDraftGroups(body.optionGroups) }));
   }
 
   function updateRecipeLine(itemId: number, inventoryItemId: number, quantityUsed: number) {
@@ -92,6 +114,7 @@ export default function MenuManager({
         priceCents: dollarsToCents(draft.price),
         isAvailable: draft.isAvailable,
         recipe: recipeByItem[itemId] ?? [],
+        optionGroups: toOptionGroupInput(optionsByItem[itemId] ?? []),
       }),
     });
     if (!res.ok) {
@@ -222,8 +245,20 @@ export default function MenuManager({
                     </div>
                   </div>
 
+                  {optionsByItem[item.id] && (
+                    <OptionGroupsEditor
+                      groups={optionsByItem[item.id]}
+                      inventoryItems={inventoryItems}
+                      onChange={(groups) => setOptionsByItem((prev) => ({ ...prev, [item.id]: groups }))}
+                    />
+                  )}
+
                   <div className="mt-4 flex gap-2">
-                    <button onClick={() => saveEdit(item.id)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">
+                    <button
+                      onClick={() => saveEdit(item.id)}
+                      disabled={!recipeByItem[item.id] || !optionsByItem[item.id]}
+                      className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    >
                       Save
                     </button>
                     <button onClick={() => setEditingId(null)} className="rounded-lg border border-line px-4 py-2 text-sm text-muted">
