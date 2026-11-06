@@ -11,7 +11,7 @@ export default function CounterTopBar({ staffName }: { staffName: string }) {
   }
 
   return (
-    <header className="flex items-center justify-between border-b border-line px-6 py-4">
+    <header className="flex items-center justify-between border-b border-line px-4 py-4 sm:px-6">
       <span className="font-display text-xl font-semibold text-ink">cafe-os</span>
       <div className="flex items-center gap-4 text-sm text-muted">
         <span>{staffName}</span>

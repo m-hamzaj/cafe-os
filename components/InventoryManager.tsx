@@ -60,7 +60,7 @@ export default function InventoryManager({ initialItems }: { initialItems: Inven
       {error && <p className="text-sm font-medium text-warn">{error}</p>}
 
       <div className="rounded-2xl border border-line bg-surface p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Add ingredient</h2>
+        <h2 className="mb-3 text-sm font-semibold text-muted">Add ingredient</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <input
             placeholder="Name (e.g. Oat milk)"
@@ -98,7 +98,7 @@ export default function InventoryManager({ initialItems }: { initialItems: Inven
             >
               <div>
                 <p className="text-ink">
-                  {item.name} {low && <span className="ml-2 text-xs font-semibold uppercase text-warn">Low stock</span>}
+                  {item.name} {low && <span className="ml-2 text-xs font-semibold text-warn">Low stock</span>}
                 </p>
                 <p className="text-sm text-muted">
                   {item.currentStock.toFixed(1)} {item.unit} on hand · alert below {item.lowStockThreshold} {item.unit}

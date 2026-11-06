@@ -135,7 +135,7 @@ export default function MenuManager({
       {error && <p className="text-sm font-medium text-warn">{error}</p>}
 
       <div className="rounded-2xl border border-line bg-surface p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Add menu item</h2>
+        <h2 className="mb-3 text-sm font-semibold text-muted">Add menu item</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <input
             placeholder="Name"
@@ -163,7 +163,7 @@ export default function MenuManager({
 
       {Object.entries(byCategory).map(([category, categoryItems]) => (
         <div key={category}>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">{category}</h2>
+          <h2 className="mb-3 font-display text-lg font-semibold text-ink">{category}</h2>
           <div className="flex flex-col gap-3">
             {categoryItems.map((item) =>
               editingId === item.id ? (
@@ -196,7 +196,7 @@ export default function MenuManager({
                   </label>
 
                   <div className="mt-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                    <p className="mb-2 text-sm font-semibold text-muted">
                       Recipe (what one order consumes)
                     </p>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

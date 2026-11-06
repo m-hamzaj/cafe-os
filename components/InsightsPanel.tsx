@@ -64,7 +64,7 @@ export default function InsightsPanel() {
           of whether this narration succeeded, per the graceful-degradation
           contract in lib/llm/insights.ts. */}
       <div className="rounded-2xl border border-accent/40 bg-surface p-5">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent">Today, in brief</p>
+        <p className="mb-2 text-sm font-semibold text-accent">Today, in brief</p>
         {summary ? (
           <p className="text-ink">{summary}</p>
         ) : (
@@ -85,7 +85,7 @@ export default function InsightsPanel() {
 
       {runwayAlerts.length > 0 && (
         <div className="rounded-2xl border border-warn bg-warn/5 p-5">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-warn">Restock soon</p>
+          <p className="mb-2 text-sm font-semibold text-warn">Restock soon</p>
           <ul className="flex flex-col gap-1 text-sm text-ink">
             {runwayAlerts.map((r) => (
               <li key={r.inventoryItemName}>
@@ -98,7 +98,7 @@ export default function InsightsPanel() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-line bg-surface p-5">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Top sellers (7 days)</p>
+          <p className="mb-3 text-sm font-semibold text-muted">Top sellers (7 days)</p>
           <ul className="flex flex-col gap-2">
             {data.topSellers.map((s) => (
               <li key={s.menuItemName} className="flex justify-between text-sm">
@@ -109,7 +109,7 @@ export default function InsightsPanel() {
           </ul>
         </div>
         <div className="rounded-2xl border border-line bg-surface p-5">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Slowest sellers (7 days)</p>
+          <p className="mb-3 text-sm font-semibold text-muted">Slowest sellers (7 days)</p>
           <ul className="flex flex-col gap-2">
             {data.bottomSellers.map((s) => (
               <li key={s.menuItemName} className="flex justify-between text-sm">
@@ -127,7 +127,7 @@ export default function InsightsPanel() {
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-line bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+      <p className="text-xs text-muted">{label}</p>
       <p className="font-display mt-1 text-xl font-semibold text-ink">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
     </div>

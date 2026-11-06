@@ -85,7 +85,7 @@ export default function OrderScreen() {
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
       {/* Menu grid */}
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex gap-2 overflow-x-auto border-b border-line px-4 py-3">
@@ -125,8 +125,8 @@ export default function OrderScreen() {
       </div>
 
       {/* Cart */}
-      <div className="flex w-80 shrink-0 flex-col border-l border-line bg-surface">
-        <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex w-full shrink-0 flex-col border-t border-line bg-surface lg:w-80 lg:border-t-0 lg:border-l">
+        <div className="max-h-48 overflow-y-auto p-4 lg:max-h-none lg:flex-1">
           {cart.length === 0 ? (
             <p className="text-sm text-muted">Tap a menu item to start an order.</p>
           ) : (
@@ -166,7 +166,7 @@ export default function OrderScreen() {
 
           {error && <p className="mb-2 text-sm font-medium text-warn">{error}</p>}
           {lastOrderTotal !== null && (
-            <p className="mb-2 text-sm font-medium text-good">Order complete — {formatCents(lastOrderTotal)}</p>
+            <p className="mb-2 text-sm font-medium text-good">Order complete: {formatCents(lastOrderTotal)}</p>
           )}
 
           <div className="grid grid-cols-2 gap-2">

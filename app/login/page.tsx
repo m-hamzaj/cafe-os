@@ -25,7 +25,7 @@ export default function LoginPage() {
 
   function pressDigit(d: string) {
     setError(null);
-    setPin((p) => (p.length < 8 ? p + d : p));
+    setPin((p) => (p.length < 4 ? p + d : p));
   }
 
   async function submit() {
@@ -60,7 +60,6 @@ export default function LoginPage() {
               className="flex flex-col items-center gap-1 rounded-2xl border border-line bg-surface px-4 py-6 text-center shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md"
             >
               <span className="text-lg font-medium text-ink">{s.name}</span>
-              <span className="text-xs uppercase tracking-wide text-muted">{s.role}</span>
             </button>
           ))}
         </div>
