@@ -10,6 +10,7 @@
  */
 import { sql } from "../lib/db-client";
 import { hashPin } from "../lib/pin";
+import { ingredientCostCents } from "../lib/costs";
 
 async function main() {
   console.log("Applying schema...");
@@ -36,24 +37,28 @@ async function main() {
   // on a believable mix: most ingredients comfortably stocked, 1-2
   // genuinely low (positive, not negative) to give the restock alert
   // and AI insight something real to flag on first run.
+  // costCents is per one unit: beans at $25/kg are 2.5 cents a gram, milk at
+  // $1.20/L is 0.12 cents a ml.
   const inventorySeed = [
-    { name: "Espresso beans", unit: "g", stock: 3200, threshold: 500 },
-    { name: "Milk", unit: "ml", stock: 17000, threshold: 2500 },
-    { name: "Oat milk", unit: "ml", stock: 5200, threshold: 1000 },
-    { name: "Chai concentrate", unit: "ml", stock: 1800, threshold: 500 },
-    { name: "Croissant", unit: "each", stock: 32, threshold: 8 },
-    { name: "Blueberry muffin", unit: "each", stock: 22, threshold: 6 },
-    { name: "Banana bread slice", unit: "each", stock: 18, threshold: 6 },
-    { name: "Cold brew concentrate", unit: "ml", stock: 6000, threshold: 600 },
+    { name: "Espresso beans", unit: "g", stock: 3200, threshold: 500, costCents: 2.5 },
+    { name: "Milk", unit: "ml", stock: 17000, threshold: 2500, costCents: 0.12 },
+    { name: "Oat milk", unit: "ml", stock: 5200, threshold: 1000, costCents: 0.3 },
+    { name: "Chai concentrate", unit: "ml", stock: 1800, threshold: 500, costCents: 0.8 },
+    { name: "Croissant", unit: "each", stock: 32, threshold: 8, costCents: 90 },
+    { name: "Blueberry muffin", unit: "each", stock: 22, threshold: 6, costCents: 80 },
+    { name: "Banana bread slice", unit: "each", stock: 18, threshold: 6, costCents: 70 },
+    { name: "Cold brew concentrate", unit: "ml", stock: 6000, threshold: 600, costCents: 1 },
   ];
   const inventoryIds: Record<string, number> = {};
+  const costByName: Record<string, number> = {};
   for (const i of inventorySeed) {
     const [row] = await sql`
-      insert into inventory_items (name, unit, current_stock, low_stock_threshold)
-      values (${i.name}, ${i.unit}, ${i.stock}, ${i.threshold})
+      insert into inventory_items (name, unit, current_stock, low_stock_threshold, unit_cost_cents)
+      values (${i.name}, ${i.unit}, ${i.stock}, ${i.threshold}, ${i.costCents})
       returning id
     `;
     inventoryIds[i.name] = row.id;
+    costByName[i.name] = i.costCents;
   }
 
   console.log("Seeding menu + recipes...");
@@ -213,9 +218,25 @@ async function main() {
           }));
         const unitPrice = selected.reduce((sum, s) => sum + s.option.priceDeltaCents, menuPrices[name]);
 
+        const ingredientUse: Array<readonly [string, number]> = [
+          ...menuSeed.find((m) => m.name === name)!.recipe,
+          ...selected.flatMap((s) => s.option.adjustments),
+        ];
+        // Same rule as checkout: sum each ingredient's use per unit, floor at
+        // zero, then price it.
+        const usedPerUnit = new Map<number, number>();
+        for (const [ingredientName, qty] of ingredientUse) {
+          const id = inventoryIds[ingredientName];
+          usedPerUnit.set(id, (usedPerUnit.get(id) ?? 0) + qty);
+        }
+        const unitCost = ingredientCostCents(
+          usedPerUnit,
+          new Map(Object.entries(costByName).map(([n, c]) => [inventoryIds[n], c]))
+        );
+
         const [lineRow] = await sql`
-          insert into order_lines (order_id, menu_item_id, quantity, unit_price_cents)
-          values (${orderRow.id}, ${menuIds[name]}, ${quantity}, ${unitPrice})
+          insert into order_lines (order_id, menu_item_id, quantity, unit_price_cents, unit_cost_cents)
+          values (${orderRow.id}, ${menuIds[name]}, ${quantity}, ${unitPrice}, ${unitCost})
           returning id
         `;
         for (const { group, option } of selected) {
@@ -228,10 +249,6 @@ async function main() {
           `;
         }
 
-        const ingredientUse: Array<readonly [string, number]> = [
-          ...menuSeed.find((m) => m.name === name)!.recipe,
-          ...selected.flatMap((s) => s.option.adjustments),
-        ];
         for (const [ingredientName, qtyPerUnit] of ingredientUse) {
           await sql`
             update inventory_items set current_stock = current_stock - ${qtyPerUnit * quantity}

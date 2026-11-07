@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { CAFE_TIMEZONE } from "@/lib/time";
+import { ingredientCostCents } from "@/lib/costs";
 import type { OrderLineInput, OrderWithLines, PaymentMethod } from "@/lib/types";
 
 /**
@@ -77,20 +78,6 @@ export async function createPaidOrder(input: {
       const unitPriceCents = Math.max(0, Number(menuItem.price_cents) + optionsTotal);
       totalCents += unitPriceCents * line.quantity;
 
-      const [orderLine] = await tx`
-        insert into order_lines (order_id, menu_item_id, quantity, unit_price_cents)
-        values (${orderId}, ${line.menuItemId}, ${line.quantity}, ${unitPriceCents})
-        returning id
-      `;
-
-      for (const option of selected) {
-        const group = groups.find((g) => g.id === option.group_id)!;
-        await tx`
-          insert into order_line_options (order_line_id, option_id, group_name, option_name, price_delta_cents)
-          values (${orderLine.id}, ${option.id}, ${group.name}, ${option.name}, ${option.price_delta_cents})
-        `;
-      }
-
       // What one unit consumes: the recipe, adjusted by the chosen options.
       const usedPerUnit = new Map<number, number>();
       const recipeLines = await tx`
@@ -111,6 +98,33 @@ export async function createPaidOrder(input: {
           const current = usedPerUnit.get(adjustment.inventory_item_id) ?? 0;
           usedPerUnit.set(adjustment.inventory_item_id, current + Number(adjustment.quantity_delta));
         }
+      }
+
+      // The ingredient cost of one unit, at today's ingredient costs, kept on
+      // the line so later price changes don't rewrite this sale's margin.
+      const costRows =
+        usedPerUnit.size === 0
+          ? []
+          : await tx`
+              select id, unit_cost_cents from inventory_items where id = any(${[...usedPerUnit.keys()]})
+            `;
+      const costById = new Map<number, number | null>(
+        costRows.map((r) => [r.id, r.unit_cost_cents === null ? null : Number(r.unit_cost_cents)])
+      );
+      const unitCostCents = ingredientCostCents(usedPerUnit, costById);
+
+      const [orderLine] = await tx`
+        insert into order_lines (order_id, menu_item_id, quantity, unit_price_cents, unit_cost_cents)
+        values (${orderId}, ${line.menuItemId}, ${line.quantity}, ${unitPriceCents}, ${unitCostCents})
+        returning id
+      `;
+
+      for (const option of selected) {
+        const group = groups.find((g) => g.id === option.group_id)!;
+        await tx`
+          insert into order_line_options (order_line_id, option_id, group_name, option_name, price_delta_cents)
+          values (${orderLine.id}, ${option.id}, ${group.name}, ${option.name}, ${option.price_delta_cents})
+        `;
       }
 
       // Scaled by how many were ordered. Floored at zero so an adjustment

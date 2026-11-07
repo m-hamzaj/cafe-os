@@ -133,6 +133,17 @@ create table if not exists stock_adjustments (
   check (kind <> 'count' or quantity_change = 0 or reason is not null)
 );
 
+-- Costs, in cents per one unit of an ingredient (fractions allowed: milk at
+-- $1.20 a litre is 0.12 per ml). Null means the owner hasn't set a cost, and
+-- anything that depends on it is reported as "not costed", never guessed.
+alter table inventory_items add column if not exists unit_cost_cents numeric check (unit_cost_cents >= 0);
+-- What one unit of a sold line cost in ingredients when it was sold, options
+-- included, so a later price change never rewrites past margins. Null when
+-- any ingredient it used had no cost set at the time.
+alter table order_lines add column if not exists unit_cost_cents numeric;
+-- The ingredient's cost per unit when waste or a count was recorded.
+alter table stock_adjustments add column if not exists unit_cost_cents numeric;
+
 -- The latest AI summary, so reopening the dashboard doesn't call the model
 -- again. Only ever one row: there's one cafe and only the latest summary matters.
 create table if not exists insight_summary_cache (

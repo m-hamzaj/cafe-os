@@ -73,6 +73,12 @@ export const addStockSchema = z.object({
   quantityAdded: z.number().positive(),
 });
 
+// Cents per one unit; null clears the cost. The ceiling is a sanity check
+// ($10,000 per unit), not a real price limit.
+export const inventoryCostSchema = z.object({
+  unitCostCents: z.number().min(0, "A cost can't be negative.").max(1_000_000).nullable(),
+});
+
 // Blank notes become undefined rather than an empty string in the database.
 const adjustmentNote = z
   .string()

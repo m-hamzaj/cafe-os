@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { MenuOptionGroup } from "@/lib/types";
+import { formatCostCents, ingredientCostCents } from "@/lib/costs";
 import OptionGroupsEditor, {
   toDraftGroups,
   toOptionGroupInput,
@@ -20,6 +21,14 @@ interface InventoryItem {
   id: number;
   name: string;
   unit: string;
+  unitCostCents: number | null;
+}
+
+/** "cost $0.62 · 16% of price", or why it can't be shown. */
+function costLabel(costCents: number | null | undefined, priceCents: number): string {
+  if (costCents === null || costCents === undefined) return "cost unknown: an ingredient has no cost";
+  if (priceCents <= 0) return `cost ${formatCostCents(costCents)}`;
+  return `cost ${formatCostCents(costCents)} · ${Math.round((costCents / priceCents) * 100)}% of price`;
 }
 
 interface RecipeLine {
@@ -39,11 +48,21 @@ function centsToDollars(c: number): string {
 export default function MenuManager({
   initialMenuItems,
   inventoryItems,
+  initialItemCosts,
 }: {
   initialMenuItems: MenuItem[];
   inventoryItems: InventoryItem[];
+  /** Base recipe cost per menu item at today's ingredient costs. */
+  initialItemCosts: Record<number, number | null>;
 }) {
   const [items, setItems] = useState(initialMenuItems);
+  const [itemCosts, setItemCosts] = useState(initialItemCosts);
+  const costById = new Map(inventoryItems.map((i) => [i.id, i.unitCostCents]));
+  const recipeCost = (itemId: number) =>
+    ingredientCostCents(
+      (recipeByItem[itemId] ?? []).map((l) => [l.inventoryItemId, l.quantityUsed]),
+      costById
+    );
   const [editingId, setEditingId] = useState<number | null>(null);
   const [recipeByItem, setRecipeByItem] = useState<Record<number, RecipeLine[]>>({});
   const [optionsByItem, setOptionsByItem] = useState<Record<number, DraftGroup[]>>({});
@@ -124,6 +143,7 @@ export default function MenuManager({
     }
     const body = await res.json();
     setItems((prev) => prev.map((i) => (i.id === itemId ? body.item : i)));
+    setItemCosts((prev) => ({ ...prev, [itemId]: recipeCost(itemId) }));
     setEditingId(null);
   }
 
@@ -145,6 +165,7 @@ export default function MenuManager({
     }
     const body = await res.json();
     setItems((prev) => [...prev, body.item]);
+    setItemCosts((prev) => ({ ...prev, [body.item.id]: 0 }));
     setNewItem({ name: "", category: "", price: "" });
   }
 
@@ -243,6 +264,11 @@ export default function MenuManager({
                         );
                       })}
                     </div>
+                    {recipeByItem[item.id] && (
+                      <p className="mt-2 text-sm text-muted">
+                        Base recipe {costLabel(recipeCost(item.id), dollarsToCents(draft.price))}. Options can change it.
+                      </p>
+                    )}
                   </div>
 
                   {optionsByItem[item.id] && (
@@ -278,7 +304,12 @@ export default function MenuManager({
                       <span className="rounded-full bg-line px-2 py-0.5 text-xs text-muted">Hidden</span>
                     )}
                   </span>
-                  <span className="text-sm text-muted">{centsToDollars(item.priceCents)}</span>
+                  <span className="flex flex-col items-end text-right">
+                    <span className="text-sm text-muted">{centsToDollars(item.priceCents)}</span>
+                    <span className={`text-xs ${itemCosts[item.id] === null ? "text-warn" : "text-muted"}`}>
+                      {costLabel(itemCosts[item.id], item.priceCents)}
+                    </span>
+                  </span>
                 </button>
               )
             )}

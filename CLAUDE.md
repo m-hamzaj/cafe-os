@@ -42,6 +42,16 @@ sessions).
   by validation and the UI. Anyone logged in can log waste (the counter's
   "Log waste" button); only the owner can save a count, because it replaces
   the stock level.
+- **Costs are recorded when things happen, never guessed.** Each
+  ingredient has an optional `unit_cost_cents` (cents per one unit,
+  fractions allowed). `createPaidOrder()` stores each line's ingredient
+  cost in `order_lines.unit_cost_cents` using `ingredientCostCents()` from
+  `lib/costs.ts`, the same rule as stock (per line, floored at zero), and
+  waste and counts store the ingredient's cost too. If any ingredient used
+  has no cost, the line is null ("not costed") rather than a partial total.
+  COGS in `lib/queries/costs.ts` sums those recorded costs; it is not the
+  beginning + purchases − ending inventory formula, because there's no
+  inventory valuation from before costs existed.
 - **Checkout never blocks on inventory.** `createPaidOrder()` in
   `lib/queries/orders.ts` lets stock go negative rather than refuse a
   sale — a cafe counter can't turn away a paying customer over a

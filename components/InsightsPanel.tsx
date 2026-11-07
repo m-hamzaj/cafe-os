@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CostsCard from "@/components/CostsCard";
+import type { CostSummary } from "@/lib/types";
 
 interface TopSeller {
   menuItemName: string;
@@ -29,6 +31,7 @@ function formatCents(cents: number): string {
 
 export default function InsightsPanel() {
   const [data, setData] = useState<InsightData | null>(null);
+  const [costs, setCosts] = useState<CostSummary | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryAgeMinutes, setSummaryAgeMinutes] = useState<number | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -39,6 +42,7 @@ export default function InsightsPanel() {
       .then((r) => r.json())
       .then((body) => {
         setData(body.data);
+        setCosts(body.costs ?? null);
         setSummary(body.summary);
         setSummaryAgeMinutes(body.summaryAgeMinutes);
         setSummaryError(body.summaryError);
@@ -104,6 +108,8 @@ export default function InsightsPanel() {
           </ul>
         </div>
       )}
+
+      {costs && <CostsCard costs={costs} />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-line bg-surface p-5">
