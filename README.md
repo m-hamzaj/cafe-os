@@ -109,6 +109,13 @@ they don't match, so missing stock is explained rather than overwritten.
 Cashiers can log waste too, from the "Log waste" button on `/counter`;
 counts stay owner-only.
 
+Each ingredient can have a cost (set on `/owner/inventory` from a recent
+purchase, like $4.00 for 1000 ml). Sales then record their ingredient cost
+when they happen, so `/owner` shows cost of goods sold, gross profit, food
+cost %, the cost of waste and missing stock, and stock value for the last 7
+days, and `/owner/menu` shows each item's recipe cost and margin. Sales made
+before an ingredient had a cost are reported as not costed, not estimated.
+
 ## Tests / verification
 
 No automated test suite yet (v1 pilot scope). Manual verification path:

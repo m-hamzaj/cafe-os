@@ -3,11 +3,15 @@
 import { useState } from "react";
 import { COUNT_REASONS, WASTE_REASONS } from "@/lib/stock-reasons";
 import { CAFE_TIMEZONE } from "@/lib/time";
+import { formatCostCents, roundCost } from "@/lib/costs";
 import type { InventoryActivity, InventoryItem, StockAdjustment } from "@/lib/types";
 
-type Panel = { itemId: number; kind: "waste" | "count" } | null;
+type PanelKind = "waste" | "count" | "cost";
+type Panel = { itemId: number; kind: PanelKind } | null;
 
-const EMPTY_FORM = { amount: "", reason: "", note: "" };
+// For the cost panel, amount is what was paid in dollars and quantity is how
+// much of the ingredient that bought.
+const EMPTY_FORM = { amount: "", quantity: "", reason: "", note: "" };
 
 function formatQty(n: number): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -96,7 +100,43 @@ export default function InventoryManager({
     setNewItem({ name: "", unit: "", threshold: "" });
   }
 
-  function openPanel(itemId: number, kind: "waste" | "count") {
+  async function saveCost(item: InventoryItem, unitCostCents: number | null) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/inventory/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unitCostCents }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.error ?? "Could not save the cost.");
+        return;
+      }
+      setItems((prev) => prev.map((i) => (i.id === body.item.id ? body.item : i)));
+      setPanel(null);
+      setForm(EMPTY_FORM);
+    } catch {
+      setError("Could not save. Check the connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function submitCost(item: InventoryItem) {
+    const paid = Number(form.amount);
+    const quantity = Number(form.quantity);
+    if (form.amount.trim() === "" || !Number.isFinite(paid) || paid < 0) {
+      return setError("Enter what you paid, in dollars.");
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return setError(`Enter how many ${item.unit} that bought.`);
+    }
+    saveCost(item, roundCost((paid * 100) / quantity));
+  }
+
+  function openPanel(itemId: number, kind: PanelKind) {
     setError(null);
     setForm(EMPTY_FORM);
     setPanel(panel?.itemId === itemId && panel.kind === kind ? null : { itemId, kind });
@@ -202,6 +242,17 @@ export default function InventoryManager({
                     )}
                     {(stats.wasted > 0 || stats.countVariance !== 0) && ` (${lookbackDays} days)`}
                   </p>
+                  <p className="text-xs text-muted">
+                    {item.unitCostCents === null ? (
+                      <span className="text-warn">No cost set</span>
+                    ) : (
+                      <>
+                        Cost {formatCostCents(item.unitCostCents)} per {item.unit}
+                        {item.currentStock > 0 &&
+                          ` · stock worth ${formatCostCents(item.currentStock * item.unitCostCents)}`}
+                      </>
+                    )}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
@@ -235,10 +286,79 @@ export default function InventoryManager({
                   >
                     Count
                   </button>
+                  <button
+                    onClick={() => openPanel(item.id, "cost")}
+                    aria-expanded={open === "cost"}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                      open === "cost" ? "border-brand bg-brand/10 text-brand" : "border-line text-ink"
+                    }`}
+                  >
+                    Cost
+                  </button>
                 </div>
               </div>
 
-              {open && (
+              {open === "cost" && (
+                <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
+                  <p className="text-sm text-muted">
+                    Enter a recent purchase, for example $4.00 for 1000 {item.unit}. Only sales, waste and counts from now
+                    on use the new cost.
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <label className="flex flex-col gap-1 text-xs text-muted">
+                      Paid ($)
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        autoFocus
+                        value={form.amount}
+                        onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                        className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-muted">
+                      For how much ({item.unit})
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={form.quantity}
+                        onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
+                        className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                      />
+                    </label>
+                    <p className="self-end pb-2 text-sm text-muted">
+                      {Number(form.quantity) > 0 && form.amount.trim() !== "" && Number(form.amount) >= 0
+                        ? `= ${formatCostCents((Number(form.amount) * 100) / Number(form.quantity))} per ${item.unit}`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => submitCost(item)}
+                      disabled={saving}
+                      className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    >
+                      {saving ? "Saving..." : "Save cost"}
+                    </button>
+                    {item.unitCostCents !== null && (
+                      <button
+                        onClick={() => saveCost(item, null)}
+                        disabled={saving}
+                        className="rounded-lg border border-line px-3 py-2 text-sm text-muted hover:text-ink disabled:opacity-40"
+                      >
+                        Clear cost
+                      </button>
+                    )}
+                    <button onClick={() => setPanel(null)} className="rounded-lg px-3 py-2 text-sm text-muted hover:text-ink">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {open && open !== "cost" && (
                 <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <label className="flex flex-col gap-1 text-xs text-muted">

@@ -37,6 +37,26 @@ export interface InventoryItem {
   unit: string;
   currentStock: number;
   lowStockThreshold: number;
+  /** Cents per one unit; null when no cost has been set. */
+  unitCostCents: number | null;
+}
+
+/** Cost figures for a recent window. Anything that depends on a missing
+ * ingredient cost is left out of the totals and counted separately. */
+export interface CostSummary {
+  days: number;
+  salesCents: number;
+  /** Sales whose ingredient cost was known when they were sold. */
+  costedSalesCents: number;
+  cogsCents: number;
+  uncostedLines: number;
+  wasteCostCents: number;
+  uncostedWasteEntries: number;
+  /** Net value of count differences: negative means stock went missing. */
+  countDifferenceCents: number;
+  uncostedCounts: number;
+  stockValueCents: number;
+  ingredientsWithoutCost: number;
 }
 
 export type StockAdjustmentKind = "waste" | "count";
