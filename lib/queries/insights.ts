@@ -25,11 +25,22 @@ export interface SalesDelta {
   lastWeekCents: number;
 }
 
+export interface WasteSummary {
+  inventoryItemName: string;
+  unit: string;
+  wasted: number;
+  entries: number;
+  /** The reason given most often; ties are broken alphabetically. */
+  topReason: string;
+}
+
 export interface InsightData {
   topSellers: TopSeller[];
   bottomSellers: TopSeller[];
   stockRunway: StockRunway[];
   salesDelta: SalesDelta;
+  /** Only ingredients with waste logged in the window; empty when none was. */
+  waste: WasteSummary[];
 }
 
 const LOOKBACK_DAYS = 7;
@@ -39,13 +50,40 @@ const LOOKBACK_DAYS = 7;
  * doesn't come from here. Same contract as the gig-tax-calculator's
  * calculate.ts -> AI explanation layer. */
 export async function computeInsightData(): Promise<InsightData> {
-  const [topSellers, bottomSellers, stockRunway, salesDelta] = await Promise.all([
+  const [topSellers, bottomSellers, stockRunway, salesDelta, waste] = await Promise.all([
     getTopSellers(5),
     getBottomSellers(5),
     getStockRunway(),
     getSalesDelta(),
+    getWasteSummary(5),
   ]);
-  return { topSellers, bottomSellers, stockRunway, salesDelta };
+  return { topSellers, bottomSellers, stockRunway, salesDelta, waste };
+}
+
+/** Logged waste per ingredient over the lookback window, most entries first.
+ * Amounts are in each ingredient's own unit, so they aren't comparable
+ * across ingredients; entry count is what decides the order. */
+async function getWasteSummary(limit: number): Promise<WasteSummary[]> {
+  const rows = await sql`
+    select i.name as inventory_item_name,
+           i.unit,
+           -sum(a.quantity_change) as wasted,
+           count(*)::integer as entries,
+           mode() within group (order by a.reason) as top_reason
+    from stock_adjustments a
+    join inventory_items i on i.id = a.inventory_item_id
+    where a.kind = 'waste' and a.created_at >= now() - (${LOOKBACK_DAYS} || ' days')::interval
+    group by i.id, i.name, i.unit
+    order by entries desc, i.name
+    limit ${limit}
+  `;
+  return rows.map((r) => ({
+    inventoryItemName: r.inventory_item_name,
+    unit: r.unit,
+    wasted: Number(r.wasted),
+    entries: r.entries,
+    topReason: r.top_reason,
+  }));
 }
 
 /** The saved AI summary, or null if there isn't one newer than maxAgeMinutes. */
