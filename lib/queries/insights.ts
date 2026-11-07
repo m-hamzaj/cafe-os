@@ -34,6 +34,16 @@ export interface WasteSummary {
   topReason: string;
 }
 
+export interface CountDifferenceSummary {
+  inventoryItemName: string;
+  unit: string;
+  /** Net of all mismatched counts: negative means stock went missing. */
+  netDifference: number;
+  mismatchedCounts: number;
+  /** The reason given most often; ties are broken alphabetically. */
+  topReason: string;
+}
+
 export interface InsightData {
   topSellers: TopSeller[];
   bottomSellers: TopSeller[];
@@ -41,6 +51,11 @@ export interface InsightData {
   salesDelta: SalesDelta;
   /** Only ingredients with waste logged in the window; empty when none was. */
   waste: WasteSummary[];
+  /** Only ingredients with a count that didn't match in the window. */
+  countDifferences: CountDifferenceSummary[];
+  /** How many counts were saved in the window, matching or not, so "no
+   * differences" can be told apart from "nobody counted". */
+  countsSaved: number;
 }
 
 const LOOKBACK_DAYS = 7;
@@ -50,14 +65,59 @@ const LOOKBACK_DAYS = 7;
  * doesn't come from here. Same contract as the gig-tax-calculator's
  * calculate.ts -> AI explanation layer. */
 export async function computeInsightData(): Promise<InsightData> {
-  const [topSellers, bottomSellers, stockRunway, salesDelta, waste] = await Promise.all([
+  const [topSellers, bottomSellers, stockRunway, salesDelta, waste, counts] = await Promise.all([
     getTopSellers(5),
     getBottomSellers(5),
     getStockRunway(),
     getSalesDelta(),
     getWasteSummary(5),
+    getCountDifferences(5),
   ]);
-  return { topSellers, bottomSellers, stockRunway, salesDelta, waste };
+  return {
+    topSellers,
+    bottomSellers,
+    stockRunway,
+    salesDelta,
+    waste,
+    countDifferences: counts.differences,
+    countsSaved: counts.countsSaved,
+  };
+}
+
+/** Counts that didn't match the system over the lookback window, per
+ * ingredient, most mismatches first. Like waste, amounts are in each
+ * ingredient's own unit and aren't compared across ingredients. */
+async function getCountDifferences(
+  limit: number
+): Promise<{ differences: CountDifferenceSummary[]; countsSaved: number }> {
+  // A fresh fragment per query rather than one shared object.
+  const inWindow = () => sql`a.kind = 'count' and a.created_at >= now() - (${LOOKBACK_DAYS} || ' days')::interval`;
+  const [rows, [{ counts_saved }]] = await Promise.all([
+    sql`
+      select i.name as inventory_item_name,
+             i.unit,
+             sum(a.quantity_change) as net_difference,
+             count(*)::integer as mismatched_counts,
+             mode() within group (order by a.reason) as top_reason
+      from stock_adjustments a
+      join inventory_items i on i.id = a.inventory_item_id
+      where ${inWindow()} and a.quantity_change <> 0
+      group by i.id, i.name, i.unit
+      order by mismatched_counts desc, i.name
+      limit ${limit}
+    `,
+    sql`select count(*)::integer as counts_saved from stock_adjustments a where ${inWindow()}`,
+  ]);
+  return {
+    differences: rows.map((r) => ({
+      inventoryItemName: r.inventory_item_name,
+      unit: r.unit,
+      netDifference: Number(r.net_difference),
+      mismatchedCounts: r.mismatched_counts,
+      topReason: r.top_reason,
+    })),
+    countsSaved: counts_saved,
+  };
 }
 
 /** Logged waste per ingredient over the lookback window, most entries first.

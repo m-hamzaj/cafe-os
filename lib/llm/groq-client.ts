@@ -20,7 +20,9 @@ const MODEL = "openai/gpt-oss-20b";
 // cap here was observed to occasionally let reasoning consume the whole
 // budget, leaving zero tokens for the actual summary -- an empty
 // completion, not an error, so it silently looked like "AI unavailable."
-const MAX_COMPLETION_TOKENS = 900;
+// Raised from 900 once waste and count data lengthened the prompt: a reply
+// was observed stopping mid-sentence at that limit.
+const MAX_COMPLETION_TOKENS = 1500;
 const RATE_LIMIT_RETRIES = 2;
 const RATE_LIMIT_BASE_BACKOFF_MS = 1_000;
 const REQUEST_TIMEOUT_MS = 9_000;
@@ -69,9 +71,11 @@ export async function callGroq(messages: GroqMessage[]): Promise<GroqOutcome> {
         temperature: 0.3,
       });
       const text = response.choices[0]?.message?.content?.trim();
-      if (!text) {
+      // A reply cut off by the token limit is treated as no reply, so a
+      // half-finished sentence is never shown or cached.
+      if (!text || response.choices[0]?.finish_reason === "length") {
         console.error(
-          "[groq-client] empty completion, finish_reason:",
+          "[groq-client] empty or cut-off completion, finish_reason:",
           response.choices[0]?.finish_reason,
           "usage:",
           response.usage
