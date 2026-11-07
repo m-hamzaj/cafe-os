@@ -20,6 +20,8 @@ sessions).
   option's `option_recipe_adjustments` are signed changes on top of
   `recipe_lines`. `createPaidOrder()` and `getStockRunway()` must apply
   them the same way: per line, floored at zero, times quantity.
+  `getStockRunway()` also counts logged waste in its window as usage, but
+  not count differences.
 - **`lib/llm/insights.ts` never invents a number.** It narrates exactly
   what `lib/queries/insights.ts` computed from real SQL — same contract
   as the sibling `gig-tax-calculator` project's AI explanation layer. If
