@@ -116,6 +116,11 @@ cost %, the cost of waste and missing stock, and stock value for the last 7
 days, and `/owner/menu` shows each item's recipe cost and margin. Sales made
 before an ingredient had a cost are reported as not costed, not estimated.
 
+Ingredients can also have a supplier lead time and safety stock. Their
+reorder point is daily usage × lead time + safety stock, and an ingredient
+at or below it is flagged "Reorder now" on `/owner/inventory`, in the
+Restock soon card on `/owner`, and in the AI summary.
+
 ## Tests / verification
 
 No automated test suite yet (v1 pilot scope). Manual verification path:

@@ -1,5 +1,6 @@
 import "server-only";
 import { callGroq, type GroqMessage } from "@/lib/llm/groq-client";
+import { needsReorder } from "@/lib/reorder";
 import { getCachedInsightSummary, saveInsightSummary, type InsightData } from "@/lib/queries/insights";
 
 // Reopening the dashboard within this window reuses the last summary, which
@@ -34,7 +35,10 @@ function formatInsightData(data: InsightData): string {
       r.daysRemaining === null
         ? "no recent usage, can't estimate runway"
         : `about ${r.daysRemaining.toFixed(1)} days remaining at the current usage rate (sales plus logged waste)`;
-    lines.push(`- ${r.inventoryItemName}: ${r.currentStock.toFixed(1)} ${r.unit} in stock, ${runway}`);
+    const reorder = needsReorder(r.currentStock, r.reorderPoint)
+      ? `; at or below its reorder point of ${r.reorderPoint!.toFixed(1)} ${r.unit} (${r.leadTimeDays}-day supplier lead time), so it should be ordered now`
+      : "";
+    lines.push(`- ${r.inventoryItemName}: ${r.currentStock.toFixed(1)} ${r.unit} in stock, ${runway}${reorder}`);
   }
 
   lines.push("\nLOGGED WASTE (last 7 days):");
@@ -83,9 +87,9 @@ function buildMessages(data: InsightData): GroqMessage[] {
       "You write a short daily summary for a cafe owner, based ONLY on the real numbers given to you.",
       "Never invent a number, never recompute one, never guess at data you weren't given.",
       "If a stock item has no measurable runway, say so plainly instead of estimating one.",
-      "Lead with the single most actionable thing (e.g. a stock item about to run out), then briefly note sales trend and top/slow sellers.",
+      "Lead with the single most actionable thing (e.g. an ingredient at its reorder point, or a stock item about to run out), then briefly note sales trend and top/slow sellers.",
       "If waste was logged, mention the ingredient with the most waste entries and its most common reason in one short clause. If none was logged, don't mention waste at all.",
-      "If a stock count found stock missing, mention the ingredient with the most missing stock in one short clause, with its reason. Only mention counts when one didn't match.",
+      "If a stock count found stock missing, mention the ingredient with the most missing stock in one short clause, with its reason. Only mention counts when one didn't match. Never call stock accurate or reliable when no counts were saved.",
       "Write 3-5 short sentences, plain English, no headers or bullet points, as if texting the owner a quick update.",
     ].join(" "),
   };

@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { CAFE_TIMEZONE } from "@/lib/time";
+import { reorderPoint } from "@/lib/reorder";
 
 export interface TopSeller {
   menuItemName: string;
@@ -9,6 +10,7 @@ export interface TopSeller {
 }
 
 export interface StockRunway {
+  inventoryItemId: number;
   inventoryItemName: string;
   unit: string;
   currentStock: number;
@@ -16,6 +18,9 @@ export interface StockRunway {
   /** null when there's no measurable consumption in the lookback window
    * -- "infinite runway" shouldn't be reported as a number. */
   daysRemaining: number | null;
+  leadTimeDays: number | null;
+  /** Daily usage × lead time + safety stock; null with no lead time set. */
+  reorderPoint: number | null;
 }
 
 export interface SalesDelta {
@@ -259,9 +264,12 @@ async function getStockRunway(): Promise<StockRunway[]> {
       ) all_usage
       group by inventory_item_id
     )
-    select i.name as inventory_item_name,
+    select i.id,
+           i.name as inventory_item_name,
            i.unit,
            i.current_stock,
+           i.lead_time_days,
+           i.safety_stock,
            coalesce(u.used, 0) / ${LOOKBACK_DAYS}::numeric as daily_rate
     from inventory_items i
     left join total_usage u on u.inventory_item_id = i.id
@@ -270,14 +278,26 @@ async function getStockRunway(): Promise<StockRunway[]> {
   return rows.map((r) => {
     const currentStock = Number(r.current_stock);
     const dailyRate = Number(r.daily_rate);
+    const leadTimeDays = r.lead_time_days === null ? null : Number(r.lead_time_days);
+    const safetyStock = r.safety_stock === null ? null : Number(r.safety_stock);
     return {
+      inventoryItemId: r.id,
       inventoryItemName: r.inventory_item_name,
       unit: r.unit,
       currentStock,
       dailyConsumptionRate: dailyRate,
       daysRemaining: dailyRate > 0 ? currentStock / dailyRate : null,
+      leadTimeDays,
+      reorderPoint: reorderPoint(dailyRate, leadTimeDays, safetyStock),
     };
   });
+}
+
+/** Each ingredient's daily usage (sales plus logged waste), by id, for the
+ * inventory screen's reorder points. */
+export async function getDailyUsageRates(): Promise<Record<number, number>> {
+  const runway = await getStockRunway();
+  return Object.fromEntries(runway.map((r) => [r.inventoryItemId, r.dailyConsumptionRate]));
 }
 
 async function getSalesDelta(): Promise<SalesDelta> {

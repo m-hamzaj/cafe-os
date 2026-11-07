@@ -12,7 +12,11 @@ interface InventoryItemRow {
   current_stock: string | number;
   low_stock_threshold: string | number;
   unit_cost_cents: string | number | null;
+  lead_time_days: string | number | null;
+  safety_stock: string | number | null;
 }
+
+const toNumberOrNull = (v: string | number | null) => (v === null ? null : Number(v));
 
 function rowToInventoryItem(row: InventoryItemRow): InventoryItem {
   return {
@@ -24,13 +28,15 @@ function rowToInventoryItem(row: InventoryItemRow): InventoryItem {
     // letting a stringly-typed number leak into the rest of the app.
     currentStock: Number(row.current_stock),
     lowStockThreshold: Number(row.low_stock_threshold),
-    unitCostCents: row.unit_cost_cents === null ? null : Number(row.unit_cost_cents),
+    unitCostCents: toNumberOrNull(row.unit_cost_cents),
+    leadTimeDays: toNumberOrNull(row.lead_time_days),
+    safetyStock: toNumberOrNull(row.safety_stock),
   };
 }
 
 export async function getInventoryItems(): Promise<InventoryItem[]> {
   const rows = await sql<InventoryItemRow[]>`
-    select id, name, unit, current_stock, low_stock_threshold, unit_cost_cents
+    select id, name, unit, current_stock, low_stock_threshold, unit_cost_cents, lead_time_days, safety_stock
     from inventory_items
     order by name
   `;
@@ -39,7 +45,7 @@ export async function getInventoryItems(): Promise<InventoryItem[]> {
 
 export async function getLowStockItems(): Promise<InventoryItem[]> {
   const rows = await sql<InventoryItemRow[]>`
-    select id, name, unit, current_stock, low_stock_threshold, unit_cost_cents
+    select id, name, unit, current_stock, low_stock_threshold, unit_cost_cents, lead_time_days, safety_stock
     from inventory_items
     where current_stock <= low_stock_threshold
     order by name
@@ -55,7 +61,7 @@ export async function createInventoryItem(input: {
   const [row] = await sql<InventoryItemRow[]>`
     insert into inventory_items (name, unit, low_stock_threshold)
     values (${input.name}, ${input.unit}, ${input.lowStockThreshold})
-    returning id, name, unit, current_stock, low_stock_threshold, unit_cost_cents
+    returning id, name, unit, current_stock, low_stock_threshold, unit_cost_cents, lead_time_days, safety_stock
   `;
   return rowToInventoryItem(row);
 }
@@ -80,17 +86,29 @@ export async function addStock(inventoryItemId: number, quantityAdded: number): 
   });
 }
 
-/** Sets what one unit of an ingredient costs, or clears it with null. Only
- * affects sales, waste and counts recorded from now on. Returns null if the
- * ingredient doesn't exist. */
-export async function setInventoryCost(
+export interface InventorySettingsInput {
+  unitCostCents?: number | null;
+  leadTimeDays?: number | null;
+  safetyStock?: number | null;
+}
+
+/**
+ * Updates an ingredient's cost and reorder settings. Only the fields given
+ * change; null clears one. A new cost only affects sales, waste and counts
+ * recorded from now on. Returns null if the ingredient doesn't exist.
+ */
+export async function updateInventorySettings(
   inventoryItemId: number,
-  unitCostCents: number | null
+  input: InventorySettingsInput
 ): Promise<InventoryItem | null> {
+  const has = (key: keyof InventorySettingsInput) => input[key] !== undefined;
   const [row] = await sql<InventoryItemRow[]>`
-    update inventory_items set unit_cost_cents = ${unitCostCents}
+    update inventory_items set
+      unit_cost_cents = case when ${has("unitCostCents")} then ${input.unitCostCents ?? null}::numeric else unit_cost_cents end,
+      lead_time_days = case when ${has("leadTimeDays")} then ${input.leadTimeDays ?? null}::numeric else lead_time_days end,
+      safety_stock = case when ${has("safetyStock")} then ${input.safetyStock ?? null}::numeric else safety_stock end
     where id = ${inventoryItemId}
-    returning id, name, unit, current_stock, low_stock_threshold, unit_cost_cents
+    returning id, name, unit, current_stock, low_stock_threshold, unit_cost_cents, lead_time_days, safety_stock
   `;
   return row ? rowToInventoryItem(row) : null;
 }
@@ -172,7 +190,7 @@ export async function recordStockAdjustment(
   });
 
   const [itemRow] = await sql<InventoryItemRow[]>`
-    select id, name, unit, current_stock, low_stock_threshold, unit_cost_cents
+    select id, name, unit, current_stock, low_stock_threshold, unit_cost_cents, lead_time_days, safety_stock
     from inventory_items where id = ${input.inventoryItemId}
   `;
   const [adjustmentRow] = await sql<StockAdjustmentRow[]>`

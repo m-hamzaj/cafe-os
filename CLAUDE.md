@@ -52,6 +52,12 @@ sessions).
   COGS in `lib/queries/costs.ts` sums those recorded costs; it is not the
   beginning + purchases − ending inventory formula, because there's no
   inventory valuation from before costs existed.
+- **Reorder points are worked out, not stored.** Each ingredient has an
+  optional `lead_time_days` and `safety_stock`; the reorder point is daily
+  usage × lead time + safety stock (`reorderPoint()` in `lib/reorder.ts`),
+  where usage is the stock runway's rate (sales plus logged waste). The
+  server and the inventory screen both call that function. No lead time
+  means no reorder point.
 - **Checkout never blocks on inventory.** `createPaidOrder()` in
   `lib/queries/orders.ts` lets stock go negative rather than refuse a
   sale — a cafe counter can't turn away a paying customer over a
