@@ -47,6 +47,26 @@ function formatInsightData(data: InsightData): string {
     lines.push(`- ${w.inventoryItemName}: ${amount} ${w.unit} wasted across ${entries}, most often "${w.topReason}"`);
   }
 
+  lines.push("\nSTOCK COUNTS THAT DIDN'T MATCH THE SYSTEM (last 7 days):");
+  if (data.countsSaved === 0) {
+    lines.push("- No counts were saved, so it's unknown whether the system's stock is accurate.");
+  } else if (data.countDifferences.length === 0) {
+    lines.push(`- All ${data.countsSaved} counts saved matched the system.`);
+  }
+  for (const c of data.countDifferences) {
+    const counts = c.mismatchedCounts === 1 ? "1 count" : `${c.mismatchedCounts} counts`;
+    const amount = Number(Math.abs(c.netDifference).toFixed(2));
+    const direction =
+      c.netDifference < 0
+        ? `${amount} ${c.unit} less on the shelf than the system expected (missing, not explained by sales or logged waste)`
+        : c.netDifference > 0
+          ? `${amount} ${c.unit} more on the shelf than the system expected`
+          : "differences that cancelled out to zero overall";
+    // "Not sure" is a valid answer in the count form but reads oddly as a cause.
+    const reason = c.topReason === "Not sure" ? "no reason given" : `most often "${c.topReason}"`;
+    lines.push(`- ${c.inventoryItemName}: ${counts} off, ${direction}, ${reason}`);
+  }
+
   lines.push("\nSALES:");
   lines.push(`- Today so far: ${formatCents(data.salesDelta.todayCents)}`);
   lines.push(`- Yesterday (full day): ${formatCents(data.salesDelta.yesterdayCents)}`);
@@ -65,6 +85,7 @@ function buildMessages(data: InsightData): GroqMessage[] {
       "If a stock item has no measurable runway, say so plainly instead of estimating one.",
       "Lead with the single most actionable thing (e.g. a stock item about to run out), then briefly note sales trend and top/slow sellers.",
       "If waste was logged, mention the ingredient with the most waste entries and its most common reason in one short clause. If none was logged, don't mention waste at all.",
+      "If a stock count found stock missing, mention the ingredient with the most missing stock in one short clause, with its reason. Only mention counts when one didn't match.",
       "Write 3-5 short sentences, plain English, no headers or bullet points, as if texting the owner a quick update.",
     ].join(" "),
   };

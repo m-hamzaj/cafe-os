@@ -23,7 +23,9 @@ sessions).
   `getStockRunway()` also counts logged waste in its window as usage, but
   not count differences. The AI summary gets logged waste per ingredient
   too, and is told an empty waste log means nothing was recorded, not that
-  nothing was wasted.
+  nothing was wasted. It also gets counts that didn't match the system,
+  plus how many counts were saved, so "no differences" isn't confused with
+  "nobody counted".
 - **`lib/llm/insights.ts` never invents a number.** It narrates exactly
   what `lib/queries/insights.ts` computed from real SQL — same contract
   as the sibling `gig-tax-calculator` project's AI explanation layer. If
