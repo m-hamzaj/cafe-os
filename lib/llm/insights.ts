@@ -37,6 +37,16 @@ function formatInsightData(data: InsightData): string {
     lines.push(`- ${r.inventoryItemName}: ${r.currentStock.toFixed(1)} ${r.unit} in stock, ${runway}`);
   }
 
+  lines.push("\nLOGGED WASTE (last 7 days):");
+  if (data.waste.length === 0) {
+    lines.push("- None logged. This does not mean nothing was wasted, only that nobody recorded any.");
+  }
+  for (const w of data.waste) {
+    const entries = w.entries === 1 ? "1 entry" : `${w.entries} entries`;
+    const amount = Number(w.wasted.toFixed(2));
+    lines.push(`- ${w.inventoryItemName}: ${amount} ${w.unit} wasted across ${entries}, most often "${w.topReason}"`);
+  }
+
   lines.push("\nSALES:");
   lines.push(`- Today so far: ${formatCents(data.salesDelta.todayCents)}`);
   lines.push(`- Yesterday (full day): ${formatCents(data.salesDelta.yesterdayCents)}`);
@@ -54,6 +64,7 @@ function buildMessages(data: InsightData): GroqMessage[] {
       "Never invent a number, never recompute one, never guess at data you weren't given.",
       "If a stock item has no measurable runway, say so plainly instead of estimating one.",
       "Lead with the single most actionable thing (e.g. a stock item about to run out), then briefly note sales trend and top/slow sellers.",
+      "If waste was logged, mention the ingredient with the most waste entries and its most common reason in one short clause. If none was logged, don't mention waste at all.",
       "Write 3-5 short sentences, plain English, no headers or bullet points, as if texting the owner a quick update.",
     ].join(" "),
   };

@@ -21,7 +21,9 @@ sessions).
   `recipe_lines`. `createPaidOrder()` and `getStockRunway()` must apply
   them the same way: per line, floored at zero, times quantity.
   `getStockRunway()` also counts logged waste in its window as usage, but
-  not count differences.
+  not count differences. The AI summary gets logged waste per ingredient
+  too, and is told an empty waste log means nothing was recorded, not that
+  nothing was wasted.
 - **`lib/llm/insights.ts` never invents a number.** It narrates exactly
   what `lib/queries/insights.ts` computed from real SQL — same contract
   as the sibling `gig-tax-calculator` project's AI explanation layer. If
