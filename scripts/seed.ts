@@ -19,7 +19,7 @@ async function main() {
   await sql.unsafe(schemaSql);
 
   console.log("Clearing existing demo data (safe to re-run)...");
-  await sql`truncate table insight_summary_cache, stock_adjustments, order_line_options, order_lines, orders, stock_entries, option_recipe_adjustments, menu_options, menu_option_groups, recipe_lines, menu_items, inventory_items, staff restart identity cascade`;
+  await sql`truncate table insight_summary_cache, purchase_order_lines, purchase_orders, stock_adjustments, order_line_options, order_lines, orders, stock_entries, option_recipe_adjustments, menu_options, menu_option_groups, recipe_lines, menu_items, inventory_items, staff restart identity cascade`;
 
   console.log("Seeding staff...");
   const ownerPinHash = await hashPin("1234");
@@ -261,6 +261,26 @@ async function main() {
         }
       }
     }
+  }
+
+  console.log("Seeding an open purchase order...");
+  // One dairy order waiting for delivery, so the purchasing page and the
+  // "on order" notes have something to show. Nothing is added to stock until
+  // it's received.
+  const [{ id: ownerId }] = await sql`select id from staff where role = 'owner' limit 1`;
+  const [po] = await sql`
+    insert into purchase_orders (supplier, note, created_by)
+    values ('Valley Dairy', 'Usual weekly milk order', ${ownerId})
+    returning id
+  `;
+  for (const [ingredientName, quantity] of [
+    ["Milk", 10000],
+    ["Oat milk", 4000],
+  ] as const) {
+    await sql`
+      insert into purchase_order_lines (purchase_order_id, inventory_item_id, quantity_ordered, unit_cost_cents)
+      values (${po.id}, ${inventoryIds[ingredientName]}, ${quantity}, ${costByName[ingredientName]})
+    `;
   }
 
   console.log("\nSeed complete.");

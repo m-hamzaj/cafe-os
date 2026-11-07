@@ -8,6 +8,7 @@ const NAV = [
   { href: "/owner/sales", label: "Sales" },
   { href: "/owner/menu", label: "Menu" },
   { href: "/owner/inventory", label: "Inventory" },
+  { href: "/owner/purchasing", label: "Purchasing" },
 ];
 
 export default async function OwnerLayout({ children }: { children: React.ReactNode }) {

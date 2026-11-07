@@ -19,6 +19,7 @@ interface StockRunway {
   daysRemaining: number | null;
   leadTimeDays: number | null;
   reorderPoint: number | null;
+  onOrder: number;
 }
 
 interface InsightData {
@@ -110,8 +111,14 @@ export default function InsightsPanel() {
             {runwayAlerts.map((r) => (
               <li key={r.inventoryItemName}>
                 {r.inventoryItemName}:{" "}
-                {needsReorder(r.currentStock, r.reorderPoint) && (
-                  <span className="font-semibold text-warn">order now, </span>
+                {r.onOrder > 0 ? (
+                  <span className="font-semibold text-ink">
+                    {r.onOrder.toFixed(1)} {r.unit} on order,{" "}
+                  </span>
+                ) : (
+                  needsReorder(r.currentStock, r.reorderPoint) && (
+                    <span className="font-semibold text-warn">order now, </span>
+                  )
                 )}
                 {r.daysRemaining === null ? "no recent usage" : `~${r.daysRemaining.toFixed(1)} days left`} (
                 {r.currentStock.toFixed(1)} {r.unit}

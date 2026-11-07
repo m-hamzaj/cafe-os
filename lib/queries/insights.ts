@@ -21,6 +21,8 @@ export interface StockRunway {
   leadTimeDays: number | null;
   /** Daily usage × lead time + safety stock; null with no lead time set. */
   reorderPoint: number | null;
+  /** Quantity on open purchase orders, not yet received. */
+  onOrder: number;
 }
 
 export interface SalesDelta {
@@ -270,9 +272,17 @@ async function getStockRunway(): Promise<StockRunway[]> {
            i.current_stock,
            i.lead_time_days,
            i.safety_stock,
-           coalesce(u.used, 0) / ${LOOKBACK_DAYS}::numeric as daily_rate
+           coalesce(u.used, 0) / ${LOOKBACK_DAYS}::numeric as daily_rate,
+           coalesce(oo.on_order, 0) as on_order
     from inventory_items i
     left join total_usage u on u.inventory_item_id = i.id
+    left join (
+      select l.inventory_item_id, sum(l.quantity_ordered) as on_order
+      from purchase_order_lines l
+      join purchase_orders p on p.id = l.purchase_order_id
+      where p.status = 'open'
+      group by l.inventory_item_id
+    ) oo on oo.inventory_item_id = i.id
     order by i.name
   `;
   return rows.map((r) => {
@@ -289,6 +299,7 @@ async function getStockRunway(): Promise<StockRunway[]> {
       daysRemaining: dailyRate > 0 ? currentStock / dailyRate : null,
       leadTimeDays,
       reorderPoint: reorderPoint(dailyRate, leadTimeDays, safetyStock),
+      onOrder: Number(r.on_order),
     };
   });
 }
