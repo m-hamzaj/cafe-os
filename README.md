@@ -82,7 +82,7 @@ lib/
   queries/            Hand-written SQL per domain (menu, inventory, orders, insights, staff)
   llm/
     groq-client.ts     Server-only Groq wrapper (same resilience pattern as gig-tax-calculator)
-    insights.ts        Narrates lib/queries/insights.ts's real numbers -- never invents one
+    insights.ts        Narrates lib/queries/insights.ts's real numbers -- never invents one; reuses a summary for 15 minutes
 app/
   counter/            Cashier order-taking screen (dark, high-contrast, built for speed)
   owner/              Owner dashboard: insights, sales history, menu + inventory management

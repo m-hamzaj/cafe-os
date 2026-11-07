@@ -18,7 +18,7 @@ async function main() {
   await sql.unsafe(schemaSql);
 
   console.log("Clearing existing demo data (safe to re-run)...");
-  await sql`truncate table order_line_options, order_lines, orders, stock_entries, option_recipe_adjustments, menu_options, menu_option_groups, recipe_lines, menu_items, inventory_items, staff restart identity cascade`;
+  await sql`truncate table insight_summary_cache, order_line_options, order_lines, orders, stock_entries, option_recipe_adjustments, menu_options, menu_option_groups, recipe_lines, menu_items, inventory_items, staff restart identity cascade`;
 
   console.log("Seeding staff...");
   const ownerPinHash = await hashPin("1234");

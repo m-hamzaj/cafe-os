@@ -30,6 +30,7 @@ function formatCents(cents: number): string {
 export default function InsightsPanel() {
   const [data, setData] = useState<InsightData | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
+  const [summaryAgeMinutes, setSummaryAgeMinutes] = useState<number | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -39,6 +40,7 @@ export default function InsightsPanel() {
       .then((body) => {
         setData(body.data);
         setSummary(body.summary);
+        setSummaryAgeMinutes(body.summaryAgeMinutes);
         setSummaryError(body.summaryError);
       })
       .finally(() => setLoading(false));
@@ -64,7 +66,14 @@ export default function InsightsPanel() {
           of whether this narration succeeded, per the graceful-degradation
           contract in lib/llm/insights.ts. */}
       <div className="rounded-2xl border border-accent/40 bg-surface p-5">
-        <p className="mb-2 text-sm font-semibold text-accent">Today, in brief</p>
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <p className="text-sm font-semibold text-accent">Today, in brief</p>
+          {summary && summaryAgeMinutes !== null && (
+            <p className="text-xs text-muted">
+              {summaryAgeMinutes === 0 ? "Written just now" : `Written ${summaryAgeMinutes} min ago`}
+            </p>
+          )}
+        </div>
         {summary ? (
           <p className="text-ink">{summary}</p>
         ) : (

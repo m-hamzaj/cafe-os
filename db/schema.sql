@@ -113,6 +113,14 @@ create table if not exists stock_entries (
   created_at          timestamptz not null default now()
 );
 
+-- The latest AI summary, so reopening the dashboard doesn't call the model
+-- again. Only ever one row: there's one cafe and only the latest summary matters.
+create table if not exists insight_summary_cache (
+  id            integer primary key default 1 check (id = 1),
+  summary       text not null,
+  generated_at  timestamptz not null default now()
+);
+
 create index if not exists idx_order_lines_order_id on order_lines(order_id);
 create index if not exists idx_order_lines_menu_item_id on order_lines(menu_item_id);
 create index if not exists idx_orders_created_at on orders(created_at);
