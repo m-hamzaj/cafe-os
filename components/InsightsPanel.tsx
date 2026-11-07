@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import CostsCard from "@/components/CostsCard";
 import type { CostSummary } from "@/lib/types";
+import { needsReorder } from "@/lib/reorder";
 
 interface TopSeller {
   menuItemName: string;
@@ -16,6 +17,8 @@ interface StockRunway {
   currentStock: number;
   dailyConsumptionRate: number;
   daysRemaining: number | null;
+  leadTimeDays: number | null;
+  reorderPoint: number | null;
 }
 
 interface InsightData {
@@ -62,7 +65,11 @@ export default function InsightsPanel() {
       ? (((data.salesDelta.thisWeekCents - data.salesDelta.lastWeekCents) / data.salesDelta.lastWeekCents) * 100).toFixed(0)
       : null;
 
-  const runwayAlerts = data.stockRunway.filter((r) => r.daysRemaining !== null && r.daysRemaining <= 5);
+  // At its reorder point, or (for ingredients with no lead time set) five
+  // days or less left.
+  const runwayAlerts = data.stockRunway.filter(
+    (r) => needsReorder(r.currentStock, r.reorderPoint) || (r.daysRemaining !== null && r.daysRemaining <= 5)
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -102,7 +109,15 @@ export default function InsightsPanel() {
           <ul className="flex flex-col gap-1 text-sm text-ink">
             {runwayAlerts.map((r) => (
               <li key={r.inventoryItemName}>
-                {r.inventoryItemName}: ~{r.daysRemaining?.toFixed(1)} days left ({r.currentStock.toFixed(1)} {r.unit})
+                {r.inventoryItemName}:{" "}
+                {needsReorder(r.currentStock, r.reorderPoint) && (
+                  <span className="font-semibold text-warn">order now, </span>
+                )}
+                {r.daysRemaining === null ? "no recent usage" : `~${r.daysRemaining.toFixed(1)} days left`} (
+                {r.currentStock.toFixed(1)} {r.unit}
+                {needsReorder(r.currentStock, r.reorderPoint) &&
+                  `, reorder point ${r.reorderPoint!.toFixed(1)}, ${r.leadTimeDays}-day lead time`}
+                )
               </li>
             ))}
           </ul>

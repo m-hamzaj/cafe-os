@@ -39,22 +39,26 @@ async function main() {
   // and AI insight something real to flag on first run.
   // costCents is per one unit: beans at $25/kg are 2.5 cents a gram, milk at
   // $1.20/L is 0.12 cents a ml.
+  // lead is days from ordering to delivery and safety is extra stock to keep,
+  // so the inventory screen has reorder points to show. Pastries arrive
+  // daily; beans and concentrates take a few days.
   const inventorySeed = [
-    { name: "Espresso beans", unit: "g", stock: 3200, threshold: 500, costCents: 2.5 },
-    { name: "Milk", unit: "ml", stock: 17000, threshold: 2500, costCents: 0.12 },
-    { name: "Oat milk", unit: "ml", stock: 5200, threshold: 1000, costCents: 0.3 },
-    { name: "Chai concentrate", unit: "ml", stock: 1800, threshold: 500, costCents: 0.8 },
-    { name: "Croissant", unit: "each", stock: 32, threshold: 8, costCents: 90 },
-    { name: "Blueberry muffin", unit: "each", stock: 22, threshold: 6, costCents: 80 },
-    { name: "Banana bread slice", unit: "each", stock: 18, threshold: 6, costCents: 70 },
-    { name: "Cold brew concentrate", unit: "ml", stock: 6000, threshold: 600, costCents: 1 },
+    { name: "Espresso beans", unit: "g", stock: 3200, threshold: 500, costCents: 2.5, lead: 3, safety: 300 },
+    { name: "Milk", unit: "ml", stock: 17000, threshold: 2500, costCents: 0.12, lead: 1, safety: 1000 },
+    { name: "Oat milk", unit: "ml", stock: 5200, threshold: 1000, costCents: 0.3, lead: 2, safety: 500 },
+    { name: "Chai concentrate", unit: "ml", stock: 1800, threshold: 500, costCents: 0.8, lead: 3, safety: 200 },
+    { name: "Croissant", unit: "each", stock: 32, threshold: 8, costCents: 90, lead: 1, safety: 4 },
+    { name: "Blueberry muffin", unit: "each", stock: 22, threshold: 6, costCents: 80, lead: 1, safety: 3 },
+    { name: "Banana bread slice", unit: "each", stock: 18, threshold: 6, costCents: 70, lead: 1, safety: 3 },
+    { name: "Cold brew concentrate", unit: "ml", stock: 6000, threshold: 600, costCents: 1, lead: 3, safety: 500 },
   ];
   const inventoryIds: Record<string, number> = {};
   const costByName: Record<string, number> = {};
   for (const i of inventorySeed) {
     const [row] = await sql`
-      insert into inventory_items (name, unit, current_stock, low_stock_threshold, unit_cost_cents)
-      values (${i.name}, ${i.unit}, ${i.stock}, ${i.threshold}, ${i.costCents})
+      insert into inventory_items
+        (name, unit, current_stock, low_stock_threshold, unit_cost_cents, lead_time_days, safety_stock)
+      values (${i.name}, ${i.unit}, ${i.stock}, ${i.threshold}, ${i.costCents}, ${i.lead}, ${i.safety})
       returning id
     `;
     inventoryIds[i.name] = row.id;

@@ -144,6 +144,12 @@ alter table order_lines add column if not exists unit_cost_cents numeric;
 -- The ingredient's cost per unit when waste or a count was recorded.
 alter table stock_adjustments add column if not exists unit_cost_cents numeric;
 
+-- Reorder settings. The reorder point itself isn't stored: it's worked out
+-- as daily usage × lead time + safety stock, because usage keeps changing.
+-- Null lead time means no reorder point; null safety stock counts as zero.
+alter table inventory_items add column if not exists lead_time_days numeric check (lead_time_days >= 0);
+alter table inventory_items add column if not exists safety_stock numeric check (safety_stock >= 0);
+
 -- The latest AI summary, so reopening the dashboard doesn't call the model
 -- again. Only ever one row: there's one cafe and only the latest summary matters.
 create table if not exists insight_summary_cache (

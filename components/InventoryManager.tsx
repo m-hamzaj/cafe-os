@@ -4,13 +4,15 @@ import { useState } from "react";
 import { COUNT_REASONS, WASTE_REASONS } from "@/lib/stock-reasons";
 import { CAFE_TIMEZONE } from "@/lib/time";
 import { formatCostCents, roundCost } from "@/lib/costs";
+import { needsReorder, reorderPoint } from "@/lib/reorder";
 import type { InventoryActivity, InventoryItem, StockAdjustment } from "@/lib/types";
 
-type PanelKind = "waste" | "count" | "cost";
+type PanelKind = "waste" | "count" | "cost" | "reorder";
 type Panel = { itemId: number; kind: PanelKind } | null;
 
 // For the cost panel, amount is what was paid in dollars and quantity is how
-// much of the ingredient that bought.
+// much of the ingredient that bought. The reorder panel reuses them for lead
+// time and safety stock.
 const EMPTY_FORM = { amount: "", quantity: "", reason: "", note: "" };
 
 function formatQty(n: number): string {
@@ -44,11 +46,14 @@ export default function InventoryManager({
   initialActivity,
   initialAdjustments,
   lookbackDays,
+  usageRates,
 }: {
   initialItems: InventoryItem[];
   initialActivity: Record<number, InventoryActivity>;
   initialAdjustments: StockAdjustment[];
   lookbackDays: number;
+  /** Daily usage per ingredient (sales plus logged waste), as of page load. */
+  usageRates: Record<number, number>;
 }) {
   const [items, setItems] = useState(initialItems);
   const [activity, setActivity] = useState(initialActivity);
@@ -100,18 +105,21 @@ export default function InventoryManager({
     setNewItem({ name: "", unit: "", threshold: "" });
   }
 
-  async function saveCost(item: InventoryItem, unitCostCents: number | null) {
+  async function saveSettings(
+    item: InventoryItem,
+    settings: { unitCostCents?: number | null; leadTimeDays?: number | null; safetyStock?: number | null }
+  ) {
     setSaving(true);
     setError(null);
     try {
       const res = await fetch(`/api/inventory/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ unitCostCents }),
+        body: JSON.stringify(settings),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(body.error ?? "Could not save the cost.");
+        setError(body.error ?? "Could not save.");
         return;
       }
       setItems((prev) => prev.map((i) => (i.id === body.item.id ? body.item : i)));
@@ -133,12 +141,33 @@ export default function InventoryManager({
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return setError(`Enter how many ${item.unit} that bought.`);
     }
-    saveCost(item, roundCost((paid * 100) / quantity));
+    saveSettings(item, { unitCostCents: roundCost((paid * 100) / quantity) });
+  }
+
+  // For the reorder panel, amount is the lead time in days and quantity is
+  // the safety stock.
+  function submitReorder(item: InventoryItem) {
+    const lead = Number(form.amount);
+    const safety = form.quantity.trim() === "" ? 0 : Number(form.quantity);
+    if (form.amount.trim() === "" || !Number.isFinite(lead) || lead < 0) {
+      return setError("Enter how many days a delivery takes.");
+    }
+    if (!Number.isFinite(safety) || safety < 0) {
+      return setError(`Enter the safety stock in ${item.unit}, or leave it empty for none.`);
+    }
+    saveSettings(item, { leadTimeDays: lead, safetyStock: safety });
   }
 
   function openPanel(itemId: number, kind: PanelKind) {
     setError(null);
-    setForm(EMPTY_FORM);
+    const item = items.find((i) => i.id === itemId);
+    // The reorder panel starts from the current settings, so a tweak doesn't
+    // mean retyping both numbers.
+    setForm(
+      kind === "reorder" && item?.leadTimeDays !== null && item?.leadTimeDays !== undefined
+        ? { ...EMPTY_FORM, amount: String(item.leadTimeDays), quantity: String(item.safetyStock ?? "") }
+        : EMPTY_FORM
+    );
     setPanel(panel?.itemId === itemId && panel.kind === kind ? null : { itemId, kind });
   }
 
@@ -217,6 +246,9 @@ export default function InventoryManager({
           const counted = open === "count" && form.amount.trim() !== "" ? Number(form.amount) : null;
           const difference = counted === null || Number.isNaN(counted) ? null : counted - item.currentStock;
           const showCountReason = difference !== null && Math.abs(difference) > 1e-9;
+          const usage = usageRates[item.id] ?? 0;
+          const point = reorderPoint(usage, item.leadTimeDays, item.safetyStock);
+          const reorderNow = needsReorder(item.currentStock, point);
 
           return (
             <div
@@ -227,6 +259,11 @@ export default function InventoryManager({
                 <div className="min-w-0">
                   <p className="text-ink">
                     {item.name} {low && <span className="ml-2 text-xs font-semibold text-warn">Low stock</span>}
+                    {reorderNow && (
+                      <span className="ml-2 rounded-full bg-warn px-2 py-0.5 text-xs font-semibold text-white">
+                        Reorder now
+                      </span>
+                    )}
                   </p>
                   <p className="text-sm text-muted">
                     {formatQty(item.currentStock)} {item.unit} on hand · alert below {formatQty(item.lowStockThreshold)}{" "}
@@ -251,6 +288,17 @@ export default function InventoryManager({
                         {item.currentStock > 0 &&
                           ` · stock worth ${formatCostCents(item.currentStock * item.unitCostCents)}`}
                       </>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted">
+                    {point === null ? (
+                      "No reorder point: set a lead time"
+                    ) : (
+                      <span className={reorderNow ? "text-warn" : undefined}>
+                        Reorder at {formatQty(point)} {item.unit} ({formatQty(usage)}/day × {formatQty(item.leadTimeDays!)}{" "}
+                        {item.leadTimeDays === 1 ? "day" : "days"}
+                        {item.safetyStock ? ` + ${formatQty(item.safetyStock)} safety` : ""})
+                      </span>
                     )}
                   </p>
                 </div>
@@ -295,8 +343,77 @@ export default function InventoryManager({
                   >
                     Cost
                   </button>
+                  <button
+                    onClick={() => openPanel(item.id, "reorder")}
+                    aria-expanded={open === "reorder"}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                      open === "reorder" ? "border-brand bg-brand/10 text-brand" : "border-line text-ink"
+                    }`}
+                  >
+                    Reorder
+                  </button>
                 </div>
               </div>
+
+              {open === "reorder" && (
+                <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
+                  <p className="text-sm text-muted">
+                    Reorder point = daily usage × days a delivery takes + safety stock. Usage is the last {lookbackDays}{" "}
+                    days of sales plus logged waste: {formatQty(usage)} {item.unit} a day.
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <label className="flex flex-col gap-1 text-xs text-muted">
+                      Delivery takes (days)
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        autoFocus
+                        value={form.amount}
+                        onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                        className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-muted">
+                      Safety stock ({item.unit}, optional)
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={form.quantity}
+                        onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
+                        className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                      />
+                    </label>
+                    <p className="self-end pb-2 text-sm text-muted">
+                      {form.amount.trim() !== "" && Number(form.amount) >= 0 && Number(form.quantity || 0) >= 0
+                        ? `= reorder at ${formatQty(reorderPoint(usage, Number(form.amount), Number(form.quantity || 0))!)} ${item.unit}`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => submitReorder(item)}
+                      disabled={saving}
+                      className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    >
+                      {saving ? "Saving..." : "Save reorder point"}
+                    </button>
+                    {item.leadTimeDays !== null && (
+                      <button
+                        onClick={() => saveSettings(item, { leadTimeDays: null, safetyStock: null })}
+                        disabled={saving}
+                        className="rounded-lg border border-line px-3 py-2 text-sm text-muted hover:text-ink disabled:opacity-40"
+                      >
+                        Remove reorder point
+                      </button>
+                    )}
+                    <button onClick={() => setPanel(null)} className="rounded-lg px-3 py-2 text-sm text-muted hover:text-ink">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {open === "cost" && (
                 <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
@@ -344,7 +461,7 @@ export default function InventoryManager({
                     </button>
                     {item.unitCostCents !== null && (
                       <button
-                        onClick={() => saveCost(item, null)}
+                        onClick={() => saveSettings(item, { unitCostCents: null })}
                         disabled={saving}
                         className="rounded-lg border border-line px-3 py-2 text-sm text-muted hover:text-ink disabled:opacity-40"
                       >
@@ -358,7 +475,7 @@ export default function InventoryManager({
                 </div>
               )}
 
-              {open && open !== "cost" && (
+              {(open === "waste" || open === "count") && (
                 <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <label className="flex flex-col gap-1 text-xs text-muted">

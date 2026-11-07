@@ -39,6 +39,10 @@ export interface InventoryItem {
   lowStockThreshold: number;
   /** Cents per one unit; null when no cost has been set. */
   unitCostCents: number | null;
+  /** Days from ordering to delivery; null means no reorder point. */
+  leadTimeDays: number | null;
+  /** Extra stock to keep on top of lead-time usage; null counts as zero. */
+  safetyStock: number | null;
 }
 
 /** Cost figures for a recent window. Anything that depends on a missing

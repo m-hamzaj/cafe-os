@@ -73,11 +73,16 @@ export const addStockSchema = z.object({
   quantityAdded: z.number().positive(),
 });
 
-// Cents per one unit; null clears the cost. The ceiling is a sanity check
-// ($10,000 per unit), not a real price limit.
-export const inventoryCostSchema = z.object({
-  unitCostCents: z.number().min(0, "A cost can't be negative.").max(1_000_000).nullable(),
-});
+// Cost and reorder settings for one ingredient. Only the fields sent change;
+// null clears one. Ceilings are sanity checks, not real limits.
+export const inventorySettingsSchema = z
+  .object({
+    // Cents per one unit ($10,000 ceiling).
+    unitCostCents: z.number().min(0, "A cost can't be negative.").max(1_000_000).nullable().optional(),
+    leadTimeDays: z.number().min(0, "Lead time can't be negative.").max(365, "Lead time can't be over a year.").nullable().optional(),
+    safetyStock: z.number().min(0, "Safety stock can't be negative.").max(10_000_000).nullable().optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to change.");
 
 // Blank notes become undefined rather than an empty string in the database.
 const adjustmentNote = z

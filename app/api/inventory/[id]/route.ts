@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api-auth";
-import { setInventoryCost } from "@/lib/queries/inventory";
-import { inventoryCostSchema } from "@/lib/validation";
+import { updateInventorySettings } from "@/lib/queries/inventory";
+import { inventorySettingsSchema } from "@/lib/validation";
 
-/** Sets or clears an ingredient's cost per unit. Owner only. */
+/** Sets or clears an ingredient's cost and reorder settings. Owner only. */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/inventory/[id]">) {
   const auth = await requireSession({ requireOwner: true });
   if (auth.response) return auth.response;
@@ -14,12 +14,12 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/inventory/
   }
 
   const body = await request.json().catch(() => null);
-  const parsed = inventoryCostSchema.safeParse(body);
+  const parsed = inventorySettingsSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid cost." }, { status: 400 });
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid settings." }, { status: 400 });
   }
 
-  const item = await setInventoryCost(id, parsed.data.unitCostCents);
+  const item = await updateInventorySettings(id, parsed.data);
   if (!item) {
     return NextResponse.json({ error: "That ingredient no longer exists." }, { status: 404 });
   }
