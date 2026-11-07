@@ -101,6 +101,12 @@ generic per-item stock count — this is what makes low-stock alerts and
 AI insights genuinely useful instead of cosmetic. Menu options adjust that
 same recipe when chosen: oat milk on a latte is Milk −200, Oat milk +200.
 
+Sales are only the expected usage. On `/owner/inventory` the owner can also
+log waste with a reason, which subtracts it from stock, and enter a physical
+count. A count sets stock to what's on the shelf but keeps the system's
+figure and the difference in `stock_adjustments`, with a reason whenever
+they don't match, so missing stock is explained rather than overwritten.
+
 ## Tests / verification
 
 No automated test suite yet (v1 pilot scope). Manual verification path:

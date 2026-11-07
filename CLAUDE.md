@@ -28,6 +28,12 @@ sessions).
   Only the narration is cached (`insight_summary_cache`, 15 minutes); the
   numbers are computed on every request. Cache Components stays off, so
   this lives in Postgres rather than `use cache`.
+- **Stock corrections keep their reason.** Waste and physical counts go
+  through `recordStockAdjustment()` into `stock_adjustments`, never a bare
+  `UPDATE current_stock`. A count stores what the system expected next to
+  what was counted, so variance stays reviewable. Restocks stay in
+  `stock_entries`. The reason lists live in `lib/stock-reasons.ts`, shared
+  by validation and the UI.
 - **Checkout never blocks on inventory.** `createPaidOrder()` in
   `lib/queries/orders.ts` lets stock go negative rather than refuse a
   sale — a cafe counter can't turn away a paying customer over a

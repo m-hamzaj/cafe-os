@@ -113,6 +113,26 @@ create table if not exists stock_entries (
   created_at          timestamptz not null default now()
 );
 
+-- Every stock change that isn't a sale or a restock, with the reason, so a
+-- correction never silently overwrites the number. Waste subtracts what was
+-- thrown away. A count sets stock to what's on the shelf and keeps what the
+-- system expected, so the difference (count variance) can be reviewed later.
+create table if not exists stock_adjustments (
+  id                serial primary key,
+  inventory_item_id integer not null references inventory_items(id),
+  kind              text not null check (kind in ('waste', 'count')),
+  quantity_change   numeric not null,   -- signed: waste is negative, a count is counted minus expected
+  expected_stock    numeric not null,   -- current_stock just before this entry
+  counted_stock     numeric,            -- what was on the shelf; counts only
+  reason            text,               -- required for waste and for a count that doesn't match
+  note              text,
+  staff_id          integer references staff(id),
+  created_at        timestamptz not null default now(),
+  check ((kind = 'count') = (counted_stock is not null)),
+  check (kind <> 'waste' or (quantity_change < 0 and reason is not null)),
+  check (kind <> 'count' or quantity_change = 0 or reason is not null)
+);
+
 -- The latest AI summary, so reopening the dashboard doesn't call the model
 -- again. Only ever one row: there's one cafe and only the latest summary matters.
 create table if not exists insight_summary_cache (
@@ -129,3 +149,4 @@ create index if not exists idx_menu_option_groups_menu_item_id on menu_option_gr
 create index if not exists idx_menu_options_group_id on menu_options(group_id);
 create index if not exists idx_order_line_options_order_line_id on order_line_options(order_line_id);
 create index if not exists idx_order_line_options_option_id on order_line_options(option_id);
+create index if not exists idx_stock_adjustments_item_created on stock_adjustments(inventory_item_id, created_at);

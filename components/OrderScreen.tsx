@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import OptionPicker from "@/components/OptionPicker";
+import { categoryColors } from "@/lib/category-colors";
 import type { MenuItemWithOptions, MenuOption } from "@/lib/types";
 
 interface CartLine {
@@ -56,6 +57,7 @@ export default function OrderScreen() {
   }, []);
 
   const categories = useMemo(() => Array.from(new Set(menu.map((m) => m.category))), [menu]);
+  const colors = useMemo(() => categoryColors(categories), [categories]);
   const visibleItems = useMemo(
     () => menu.filter((m) => (category ? m.category === category : true)),
     [menu, category]
@@ -165,29 +167,38 @@ export default function OrderScreen() {
             <button
               key={c}
               onClick={() => setCategory(c)}
-              className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium ${
+              className={`flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium ${
                 category === c ? "bg-accent text-accent-ink" : "bg-surface text-muted"
               }`}
             >
+              <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors.get(c) }} />
               {c}
             </button>
           ))}
         </div>
 
         <div className="grid flex-1 auto-rows-max grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 lg:grid-cols-4">
-          {visibleItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => tapItem(item)}
-              className="flex flex-col items-start gap-1 rounded-2xl border border-line bg-surface p-4 text-left transition-transform active:scale-95"
-            >
-              <span className="text-base font-medium text-ink">{item.name}</span>
-              <span className="text-sm text-muted">
-                {formatCents(item.priceCents)}
-                {item.optionGroups.length > 0 && " · options"}
-              </span>
-            </button>
-          ))}
+          {visibleItems.map((item) => {
+            const color = colors.get(item.category);
+            return (
+              <button
+                key={item.id}
+                onClick={() => tapItem(item)}
+                style={{
+                  backgroundColor: `color-mix(in srgb, ${color} 26%, var(--surface))`,
+                  borderColor: `color-mix(in srgb, ${color} 60%, var(--line))`,
+                }}
+                className="flex flex-col items-start gap-1 rounded-2xl border p-4 text-left transition-transform active:scale-95"
+              >
+                <span aria-hidden className="mb-1 h-1 w-8 rounded-full" style={{ backgroundColor: color }} />
+                <span className="text-base font-medium text-ink">{item.name}</span>
+                <span className="text-sm text-muted">
+                  {formatCents(item.priceCents)}
+                  {item.optionGroups.length > 0 && " · options"}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
