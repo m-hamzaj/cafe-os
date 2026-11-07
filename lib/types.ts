@@ -39,6 +39,33 @@ export interface InventoryItem {
   lowStockThreshold: number;
 }
 
+export type StockAdjustmentKind = "waste" | "count";
+
+export interface StockAdjustment {
+  id: number;
+  inventoryItemId: number;
+  inventoryItemName: string;
+  unit: string;
+  kind: StockAdjustmentKind;
+  /** Signed: negative for waste or a count that came up short. */
+  quantityChange: number;
+  expectedStock: number;
+  countedStock: number | null;
+  reason: string | null;
+  note: string | null;
+  staffName: string | null;
+  createdAt: string;
+}
+
+/** Waste and count results per ingredient over the recent window. */
+export interface InventoryActivity {
+  wasted: number;
+  /** Sum of count differences: negative means stock went missing. */
+  countVariance: number;
+  /** Whole days since the last count, or null if it was never counted. */
+  daysSinceCount: number | null;
+}
+
 export interface RecipeLine {
   menuItemId: number;
   inventoryItemId: number;
