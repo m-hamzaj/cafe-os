@@ -106,6 +106,8 @@ log waste with a reason, which subtracts it from stock, and enter a physical
 count. A count sets stock to what's on the shelf but keeps the system's
 figure and the difference in `stock_adjustments`, with a reason whenever
 they don't match, so missing stock is explained rather than overwritten.
+Cashiers can log waste too, from the "Log waste" button on `/counter`;
+counts stay owner-only.
 
 ## Tests / verification
 

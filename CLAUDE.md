@@ -33,7 +33,9 @@ sessions).
   `UPDATE current_stock`. A count stores what the system expected next to
   what was counted, so variance stays reviewable. Restocks stay in
   `stock_entries`. The reason lists live in `lib/stock-reasons.ts`, shared
-  by validation and the UI.
+  by validation and the UI. Anyone logged in can log waste (the counter's
+  "Log waste" button); only the owner can save a count, because it replaces
+  the stock level.
 - **Checkout never blocks on inventory.** `createPaidOrder()` in
   `lib/queries/orders.ts` lets stock go negative rather than refuse a
   sale — a cafe counter can't turn away a paying customer over a
