@@ -48,6 +48,27 @@ export async function computeInsightData(): Promise<InsightData> {
   return { topSellers, bottomSellers, stockRunway, salesDelta };
 }
 
+/** The saved AI summary, or null if there isn't one newer than maxAgeMinutes. */
+export async function getCachedInsightSummary(
+  maxAgeMinutes: number
+): Promise<{ summary: string; ageMinutes: number } | null> {
+  const [row] = await sql`
+    select summary,
+           floor(extract(epoch from now() - generated_at) / 60)::integer as age_minutes
+    from insight_summary_cache
+    where generated_at > now() - (${maxAgeMinutes} || ' minutes')::interval
+  `;
+  return row ? { summary: row.summary, ageMinutes: row.age_minutes } : null;
+}
+
+export async function saveInsightSummary(summary: string): Promise<void> {
+  await sql`
+    insert into insight_summary_cache (id, summary, generated_at)
+    values (1, ${summary}, now())
+    on conflict (id) do update set summary = excluded.summary, generated_at = excluded.generated_at
+  `;
+}
+
 async function getTopSellers(limit: number): Promise<TopSeller[]> {
   const rows = await sql`
     select m.name as menu_item_name,
@@ -71,18 +92,21 @@ async function getTopSellers(limit: number): Promise<TopSeller[]> {
 async function getBottomSellers(limit: number): Promise<TopSeller[]> {
   // Only menu items that are available but have real (possibly zero)
   // sales in the window -- an unavailable item showing "0 sold" isn't a
-  // useful signal.
+  // useful signal. order_lines and orders are joined to each other first, so
+  // a line outside the window drops out instead of still being counted.
   const rows = await sql`
     select m.name as menu_item_name,
            coalesce(sum(ol.quantity), 0) as units_sold,
            coalesce(sum(ol.quantity * ol.unit_price_cents), 0) as revenue_cents
     from menu_items m
-    left join order_lines ol on ol.menu_item_id = m.id
-    left join orders o on o.id = ol.order_id
-      and o.status = 'paid' and o.created_at >= now() - (${LOOKBACK_DAYS} || ' days')::interval
+    left join (
+      order_lines ol
+      join orders o on o.id = ol.order_id
+        and o.status = 'paid' and o.created_at >= now() - (${LOOKBACK_DAYS} || ' days')::interval
+    ) on ol.menu_item_id = m.id
     where m.is_available
     group by m.name
-    order by units_sold asc
+    order by units_sold asc, m.name
     limit ${limit}
   `;
   return rows.map((r) => ({

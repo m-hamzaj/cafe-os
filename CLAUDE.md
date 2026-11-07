@@ -25,6 +25,9 @@ sessions).
   as the sibling `gig-tax-calculator` project's AI explanation layer. If
   you add a new insight, compute it as real data first, then pass it to
   the narration prompt; never ask the model to estimate or recalculate.
+  Only the narration is cached (`insight_summary_cache`, 15 minutes); the
+  numbers are computed on every request. Cache Components stays off, so
+  this lives in Postgres rather than `use cache`.
 - **Checkout never blocks on inventory.** `createPaidOrder()` in
   `lib/queries/orders.ts` lets stock go negative rather than refuse a
   sale — a cafe counter can't turn away a paying customer over a

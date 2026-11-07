@@ -1,6 +1,11 @@
 import "server-only";
 import { callGroq, type GroqMessage } from "@/lib/llm/groq-client";
-import type { InsightData } from "@/lib/queries/insights";
+import { getCachedInsightSummary, saveInsightSummary, type InsightData } from "@/lib/queries/insights";
+
+// Reopening the dashboard within this window reuses the last summary, which
+// caps Groq usage at about four calls an hour. The numbers beside the summary
+// are always live, so the panel shows how old the summary is.
+const SUMMARY_MAX_AGE_MINUTES = 15;
 
 function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -61,21 +66,39 @@ function buildMessages(data: InsightData): GroqMessage[] {
 
 export interface InsightSummaryResult {
   summary: string | null;
+  /** Whole minutes since the summary was written; null when there is none. */
+  ageMinutes: number | null;
   error: string | null;
 }
 
 /** Never throws. A Groq failure only means summary is null, exactly like
  * the gig-tax-calculator's explanation layer -- the real computed data
  * (InsightData) is always available to render regardless of whether the
- * narration succeeded. */
+ * narration succeeded. The cache can fail the same way: without it the
+ * summary is just written fresh, and failures are never saved, so the next
+ * visit tries Groq again. */
 export async function generateInsightSummary(data: InsightData): Promise<InsightSummaryResult> {
+  try {
+    const cached = await getCachedInsightSummary(SUMMARY_MAX_AGE_MINUTES);
+    if (cached) {
+      return { summary: cached.summary, ageMinutes: cached.ageMinutes, error: null };
+    }
+  } catch (cacheError) {
+    console.error("[insights] could not read the summary cache:", cacheError);
+  }
+
   const outcome = await callGroq(buildMessages(data));
   if (outcome.ok) {
-    return { summary: outcome.text, error: null };
+    try {
+      await saveInsightSummary(outcome.text);
+    } catch (cacheError) {
+      console.error("[insights] could not save the summary cache:", cacheError);
+    }
+    return { summary: outcome.text, ageMinutes: 0, error: null };
   }
   const error =
     outcome.reason === "rate_limited"
       ? "AI summary is temporarily busy -- try again in a minute. Your numbers below are still accurate."
       : "AI summary is unavailable right now. Your numbers below are still accurate.";
-  return { summary: null, error };
+  return { summary: null, ageMinutes: null, error };
 }
