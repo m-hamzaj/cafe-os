@@ -121,6 +121,10 @@ async function getStockRunway(): Promise<StockRunway[]> {
   // the chosen options' adjustments, floored at zero, times the quantity.
   // Adjustments are read from the option's current definition, and an option
   // deleted since the sale no longer contributes.
+  //
+  // Logged waste in the same window counts as usage too, since it empties the
+  // shelf just like a sale. Count differences don't: a count can correct drift
+  // built up over far longer than the window, which would distort the rate.
   const rows = await sql`
     with recent_lines as (
       select ol.id, ol.menu_item_id, ol.quantity
@@ -143,9 +147,18 @@ async function getStockRunway(): Promise<StockRunway[]> {
       from per_unit
       group by order_line_id, quantity, inventory_item_id
     ),
+    waste_usage as (
+      select inventory_item_id, -quantity_change as used
+      from stock_adjustments
+      where kind = 'waste' and created_at >= now() - (${LOOKBACK_DAYS} || ' days')::interval
+    ),
     total_usage as (
       select inventory_item_id, sum(used) as used
-      from line_usage
+      from (
+        select inventory_item_id, used from line_usage
+        union all
+        select inventory_item_id, used from waste_usage
+      ) all_usage
       group by inventory_item_id
     )
     select i.name as inventory_item_name,

@@ -33,7 +33,7 @@ function formatInsightData(data: InsightData): string {
     const runway =
       r.daysRemaining === null
         ? "no recent usage, can't estimate runway"
-        : `about ${r.daysRemaining.toFixed(1)} days remaining at the current usage rate`;
+        : `about ${r.daysRemaining.toFixed(1)} days remaining at the current usage rate (sales plus logged waste)`;
     lines.push(`- ${r.inventoryItemName}: ${r.currentStock.toFixed(1)} ${r.unit} in stock, ${runway}`);
   }
 
