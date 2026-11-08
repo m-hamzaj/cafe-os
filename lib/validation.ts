@@ -84,6 +84,49 @@ export const inventorySettingsSchema = z
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), "Nothing to change.");
 
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .transform((t) => t || undefined);
+
+export const createPurchaseOrderSchema = z.object({
+  supplier: z.string().trim().min(1, "Enter the supplier.").max(80),
+  note: optionalText(200),
+  lines: z
+    .array(
+      z.object({
+        inventoryItemId: z.number().int().positive(),
+        quantity: z.number().positive("Each line needs a quantity above zero.").max(10_000_000),
+        // Expected price per unit, in cents; optional.
+        unitCostCents: z.number().min(0).max(1_000_000).nullable().optional(),
+      })
+    )
+    .min(1, "Add at least one ingredient.")
+    .max(100)
+    .refine(
+      (lines) => new Set(lines.map((l) => l.inventoryItemId)).size === lines.length,
+      "Each ingredient can only be on an order once."
+    ),
+});
+
+export const receivePurchaseOrderSchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        lineId: z.number().int().positive(),
+        quantityReceived: z.number().min(0, "Received can't be below zero.").max(10_000_000),
+        // Price actually paid per unit, in cents; null if unknown.
+        unitCostCents: z.number().min(0).max(1_000_000).nullable(),
+        note: optionalText(200),
+      })
+    )
+    .min(1)
+    .refine((lines) => new Set(lines.map((l) => l.lineId)).size === lines.length, "A line was listed twice."),
+});
+
 // Blank notes become undefined rather than an empty string in the database.
 const adjustmentNote = z
   .string()

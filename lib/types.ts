@@ -45,6 +45,33 @@ export interface InventoryItem {
   safetyStock: number | null;
 }
 
+export type PurchaseOrderStatus = "open" | "received" | "cancelled";
+
+export interface PurchaseOrderLine {
+  id: number;
+  inventoryItemId: number;
+  inventoryItemName: string;
+  unit: string;
+  quantityOrdered: number;
+  /** Expected price per unit, or the price paid once received. */
+  unitCostCents: number | null;
+  /** Null until the order is received. */
+  quantityReceived: number | null;
+  receiveNote: string | null;
+}
+
+export interface PurchaseOrder {
+  id: number;
+  supplier: string;
+  status: PurchaseOrderStatus;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  closedBy: string | null;
+  closedAt: string | null;
+  lines: PurchaseOrderLine[];
+}
+
 /** Cost figures for a recent window. Anything that depends on a missing
  * ingredient cost is left out of the totals and counted separately. */
 export interface CostSummary {

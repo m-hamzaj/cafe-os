@@ -133,6 +133,35 @@ create table if not exists stock_adjustments (
   check (kind <> 'count' or quantity_change = 0 or reason is not null)
 );
 
+-- Orders placed with a supplier. Stock only changes when an order is
+-- received, and then by what actually arrived, not what was ordered.
+create table if not exists purchase_orders (
+  id            serial primary key,
+  supplier      text not null,
+  status        text not null default 'open' check (status in ('open', 'received', 'cancelled')),
+  note          text,
+  created_by    integer references staff(id),
+  created_at    timestamptz not null default now(),
+  closed_by     integer references staff(id),
+  closed_at     timestamptz
+);
+
+create table if not exists purchase_order_lines (
+  id                 serial primary key,
+  purchase_order_id  integer not null references purchase_orders(id) on delete cascade,
+  inventory_item_id  integer not null references inventory_items(id),
+  quantity_ordered   numeric not null check (quantity_ordered > 0),
+  -- Expected price per unit when ordering, replaced by the price actually
+  -- paid on receipt. Null when no price was given.
+  unit_cost_cents    numeric check (unit_cost_cents >= 0),
+  quantity_received  numeric check (quantity_received >= 0),
+  receive_note       text,
+  unique (purchase_order_id, inventory_item_id)
+);
+
+-- Which purchase order line a restock came from; null for manual restocks.
+alter table stock_entries add column if not exists purchase_order_line_id integer references purchase_order_lines(id);
+
 -- Costs, in cents per one unit of an ingredient (fractions allowed: milk at
 -- $1.20 a litre is 0.12 per ml). Null means the owner hasn't set a cost, and
 -- anything that depends on it is reported as "not costed", never guessed.
@@ -167,3 +196,5 @@ create index if not exists idx_menu_options_group_id on menu_options(group_id);
 create index if not exists idx_order_line_options_order_line_id on order_line_options(order_line_id);
 create index if not exists idx_order_line_options_option_id on order_line_options(option_id);
 create index if not exists idx_stock_adjustments_item_created on stock_adjustments(inventory_item_id, created_at);
+create index if not exists idx_purchase_orders_status on purchase_orders(status);
+create index if not exists idx_purchase_order_lines_order on purchase_order_lines(purchase_order_id);

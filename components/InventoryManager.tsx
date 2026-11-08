@@ -47,6 +47,7 @@ export default function InventoryManager({
   initialAdjustments,
   lookbackDays,
   usageRates,
+  onOrder,
 }: {
   initialItems: InventoryItem[];
   initialActivity: Record<number, InventoryActivity>;
@@ -54,6 +55,8 @@ export default function InventoryManager({
   lookbackDays: number;
   /** Daily usage per ingredient (sales plus logged waste), as of page load. */
   usageRates: Record<number, number>;
+  /** Quantity on open purchase orders per ingredient. */
+  onOrder: Record<number, number>;
 }) {
   const [items, setItems] = useState(initialItems);
   const [activity, setActivity] = useState(initialActivity);
@@ -249,6 +252,7 @@ export default function InventoryManager({
           const usage = usageRates[item.id] ?? 0;
           const point = reorderPoint(usage, item.leadTimeDays, item.safetyStock);
           const reorderNow = needsReorder(item.currentStock, point);
+          const incoming = onOrder[item.id] ?? 0;
 
           return (
             <div
@@ -259,15 +263,19 @@ export default function InventoryManager({
                 <div className="min-w-0">
                   <p className="text-ink">
                     {item.name} {low && <span className="ml-2 text-xs font-semibold text-warn">Low stock</span>}
-                    {reorderNow && (
-                      <span className="ml-2 rounded-full bg-warn px-2 py-0.5 text-xs font-semibold text-white">
-                        Reorder now
-                      </span>
-                    )}
+                    {reorderNow &&
+                      (incoming > 0 ? (
+                        <span className="ml-2 rounded-full bg-line px-2 py-0.5 text-xs font-semibold text-ink">On order</span>
+                      ) : (
+                        <span className="ml-2 rounded-full bg-warn px-2 py-0.5 text-xs font-semibold text-white">
+                          Reorder now
+                        </span>
+                      ))}
                   </p>
                   <p className="text-sm text-muted">
                     {formatQty(item.currentStock)} {item.unit} on hand · alert below {formatQty(item.lowStockThreshold)}{" "}
                     {item.unit}
+                    {incoming > 0 && ` · ${formatQty(incoming)} ${item.unit} on order`}
                   </p>
                   <p className="text-xs text-muted">
                     {countedLabel(stats.daysSinceCount)}

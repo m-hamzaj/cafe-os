@@ -35,9 +35,15 @@ function formatInsightData(data: InsightData): string {
       r.daysRemaining === null
         ? "no recent usage, can't estimate runway"
         : `about ${r.daysRemaining.toFixed(1)} days remaining at the current usage rate (sales plus logged waste)`;
+    // Something already on order shouldn't be reported as needing an order.
+    const onOrder = `${r.onOrder.toFixed(1)} ${r.unit} already on order and not yet delivered`;
     const reorder = needsReorder(r.currentStock, r.reorderPoint)
-      ? `; at or below its reorder point of ${r.reorderPoint!.toFixed(1)} ${r.unit} (${r.leadTimeDays}-day supplier lead time), so it should be ordered now`
-      : "";
+      ? r.onOrder > 0
+        ? `; at or below its reorder point of ${r.reorderPoint!.toFixed(1)} ${r.unit}, but ${onOrder}, so no new order is needed`
+        : `; at or below its reorder point of ${r.reorderPoint!.toFixed(1)} ${r.unit} (${r.leadTimeDays}-day supplier lead time), so it should be ordered now`
+      : r.onOrder > 0
+        ? `; ${onOrder}`
+        : "";
     lines.push(`- ${r.inventoryItemName}: ${r.currentStock.toFixed(1)} ${r.unit} in stock, ${runway}${reorder}`);
   }
 

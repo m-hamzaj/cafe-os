@@ -58,6 +58,13 @@ sessions).
   where usage is the stock runway's rate (sales plus logged waste). The
   server and the inventory screen both call that function. No lead time
   means no reorder point.
+- **Purchase orders only touch stock when received.** `lib/queries/purchasing.ts`
+  creates orders (`purchase_orders`, `purchase_order_lines`); receiving
+  records what actually arrived for every line (zero allowed), adds it via
+  `stock_entries` linked by `purchase_order_line_id`, sets the ingredient's
+  cost to the price paid, and closes the order even if lines came up short.
+  Quantities on open orders show as "on order" and suppress "reorder now"
+  advice, including in the AI summary.
 - **Checkout never blocks on inventory.** `createPaidOrder()` in
   `lib/queries/orders.ts` lets stock go negative rather than refuse a
   sale — a cafe counter can't turn away a paying customer over a

@@ -121,6 +121,12 @@ reorder point is daily usage × lead time + safety stock, and an ingredient
 at or below it is flagged "Reorder now" on `/owner/inventory`, in the
 Restock soon card on `/owner`, and in the AI summary.
 
+`/owner/purchasing` handles ordering from suppliers: place an order (one
+button adds every ingredient at its reorder point), then receive it by
+entering what actually arrived and what was paid. Only received quantities
+reach stock, prices paid become ingredient costs, and shortfalls are kept
+in the order history. Quantities on open orders show as "on order".
+
 ## Tests / verification
 
 No automated test suite yet (v1 pilot scope). Manual verification path:

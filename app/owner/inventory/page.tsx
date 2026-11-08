@@ -5,14 +5,16 @@ import {
   getRecentStockAdjustments,
 } from "@/lib/queries/inventory";
 import { getDailyUsageRates } from "@/lib/queries/insights";
+import { getOnOrder } from "@/lib/queries/purchasing";
 import InventoryManager from "@/components/InventoryManager";
 
 export default async function OwnerInventoryPage() {
-  const [items, activity, adjustments, usageRates] = await Promise.all([
+  const [items, activity, adjustments, usageRates, onOrder] = await Promise.all([
     getInventoryItems(),
     getInventoryActivity(),
     getRecentStockAdjustments(),
     getDailyUsageRates(),
+    getOnOrder(),
   ]);
   return (
     <div className="mx-auto max-w-3xl">
@@ -23,6 +25,7 @@ export default async function OwnerInventoryPage() {
         initialAdjustments={adjustments}
         lookbackDays={ACTIVITY_LOOKBACK_DAYS}
         usageRates={usageRates}
+        onOrder={onOrder}
       />
     </div>
   );
