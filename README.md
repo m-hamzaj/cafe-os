@@ -1,143 +1,73 @@
 # cafe-os
 
-Order-taking, inventory, and AI-narrated daily insights for a single cafe —
-built as the v1 pilot for a product eventually meant to be sold/licensed to
-other cafes (see the multi-tenant plan for v2, below).
+Point of sale, ingredient-level inventory and AI-written daily insights for
+a single cafe. It's the v1 pilot for a product meant to be licensed to other
+cafes later.
 
-## Why this exists
+**Live:** https://cafe-os-theta-three.vercel.app
 
-Most small-cafe POS tools are either generic retail software (overkill,
-built for multi-location chains) or informal pen-and-paper/spreadsheet
-tracking. This is right-sized for one cafe: order-taking, real
-ingredient-level inventory decrement, and a daily AI summary that
-explains numbers the database already computed — it never invents or
-recalculates a figure, same discipline as this project's companion
-`gig-tax-calculator`.
+## What it does
+
+- **Counter (`/counter`):** fast order taking with menu options like oat
+  milk or an extra shot. Tiles are coloured by category. Cashiers can log
+  waste and mark an option out of stock.
+- **Inventory:** every sale subtracts the ingredients its recipe uses, so a
+  latte reduces milk and beans. Waste is logged with a reason. A physical
+  count sets stock to what's on the shelf and keeps the difference.
+- **Costs:** each ingredient can have a cost. Sales record their cost at the
+  moment they happen, giving cost of goods sold, gross profit, food cost %
+  and per-item margins. Anything sold before a cost existed is shown as not
+  costed, never estimated.
+- **Reorder points:** daily usage × supplier lead time + safety stock. Items
+  at or below that point are flagged "Reorder now".
+- **Purchase orders (`/owner/purchasing`):** place an order, then receive
+  what actually arrived. Only received stock counts, the price paid becomes
+  the ingredient's cost, and shortfalls are kept.
+- **AI summary (`/owner`):** a short daily briefing written by Groq from
+  numbers the database already computed. The model never calculates or
+  invents a figure. Summaries are reused for 15 minutes.
 
 ## Stack
 
-Next.js (App Router) + TypeScript + Tailwind, PostgreSQL via `postgres.js`
-(hand-written SQL, no ORM), Groq for the AI insights narration.
+Next.js (App Router) and TypeScript, Tailwind, PostgreSQL through
+`postgres.js` with hand-written SQL and no ORM, zod, and Groq for the
+summary. Cache Components is off on purpose: every page is per-request
+data behind a login.
 
-**Cache Components is deliberately disabled** (see `next.config.ts`) —
-every page here is authenticated, per-request business data with nothing
-to gain from static prerendering.
-
-## Getting started
-
-### 1. Database
-
-Either run Postgres locally via Docker:
+## Run it locally
 
 ```bash
-docker compose up -d
-```
-
-...or sign up for a free [Neon](https://neon.tech) or [Supabase](https://supabase.com)
-account and copy its connection string instead.
-
-### 2. Environment
-
-```bash
-cp .env.local.example .env.local
-```
-
-Fill in `DATABASE_URL` (matches `docker-compose.yml` by default for local
-dev), `GROQ_API_KEY` (from [console.groq.com](https://console.groq.com)),
-and `SESSION_SECRET` (any long random string — the file has a one-liner
-to generate one).
-
-### 3. Seed
-
-```bash
+docker compose up -d              # or use a Neon/Supabase connection string
+cp .env.local.example .env.local  # set DATABASE_URL, GROQ_API_KEY, SESSION_SECRET
 npm install
-npm run db:seed
-```
-
-This applies `db/schema.sql`, creates two demo staff logins, a 9-item
-menu across 4 categories with real ingredient recipes and options on the
-milk drinks, and 8 days of
-backdated order history — so the insights panel has real data to narrate
-on first load instead of an empty dashboard.
-
-Log in at `/login` as:
-- **Owner**, PIN `1234`
-- **Cashier**, PIN `1111`
-
-### 4. Run
-
-```bash
+npm run db:seed                   # schema + demo menu, stock and 8 days of orders
 npm run dev
 ```
 
-## Project layout
+Log in at `/login`: **Owner** PIN `1234`, **Cashier** PIN `1111`.
+
+## Layout
 
 ```
-lib/
-  db.ts              Postgres connection (server-only)
-  auth.ts             PIN hashing + signed session cookies (server-only)
-  api-auth.ts         requireSession() helper for route handlers
-  types.ts            Shared domain types
-  validation.ts       Zod schemas, shared by client forms and API routes
-  queries/            Hand-written SQL per domain (menu, inventory, orders, insights, staff)
-  llm/
-    groq-client.ts     Server-only Groq wrapper (same resilience pattern as gig-tax-calculator)
-    insights.ts        Narrates lib/queries/insights.ts's real numbers -- never invents one; reuses a summary for 15 minutes
-app/
-  counter/            Cashier order-taking screen (dark, high-contrast, built for speed)
-  owner/              Owner dashboard: insights, sales history, menu + inventory management
-  api/                Route handlers backing both
-db/
-  schema.sql           The whole schema -- read this first to understand the data model
-scripts/
-  seed.ts              Demo data (npm run db:seed)
+db/schema.sql      The whole data model. Read this first
+lib/queries/       SQL per area: menu, orders, inventory, costs, purchasing, insights, staff
+lib/llm/           Groq client and the insights narration
+lib/               Shared rules: costs.ts, reorder.ts, stock-reasons.ts, validation.ts, auth.ts
+app/counter/       Cashier screen
+app/owner/         Insights, sales, menu, inventory, purchasing
+app/api/           Route handlers
+scripts/seed.ts    Demo data
 ```
 
-## The data model, in one sentence
+`CLAUDE.md` lists the design rules any change has to follow.
 
-Selling a menu item decrements the *actual ingredients* it consumes via
-`recipe_lines` (e.g. a latte decrements milk + coffee beans), not a
-generic per-item stock count — this is what makes low-stock alerts and
-AI insights genuinely useful instead of cosmetic. Menu options adjust that
-same recipe when chosen: oat milk on a latte is Milk −200, Oat milk +200.
+## Verifying
 
-Sales are only the expected usage. On `/owner/inventory` the owner can also
-log waste with a reason, which subtracts it from stock, and enter a physical
-count. A count sets stock to what's on the shelf but keeps the system's
-figure and the difference in `stock_adjustments`, with a reason whenever
-they don't match, so missing stock is explained rather than overwritten.
-Cashiers can log waste too, from the "Log waste" button on `/counter`;
-counts stay owner-only.
+There's no automated test suite yet. Seed the demo data, place a few orders
+on `/counter`, then check that `/owner/inventory` shows the right ingredient
+changes and that the numbers on `/owner` match a hand calculation.
 
-Each ingredient can have a cost (set on `/owner/inventory` from a recent
-purchase, like $4.00 for 1000 ml). Sales then record their ingredient cost
-when they happen, so `/owner` shows cost of goods sold, gross profit, food
-cost %, the cost of waste and missing stock, and stock value for the last 7
-days, and `/owner/menu` shows each item's recipe cost and margin. Sales made
-before an ingredient had a cost are reported as not costed, not estimated.
+## Not built yet (v2)
 
-Ingredients can also have a supplier lead time and safety stock. Their
-reorder point is daily usage × lead time + safety stock, and an ingredient
-at or below it is flagged "Reorder now" on `/owner/inventory`, in the
-Restock soon card on `/owner`, and in the AI summary.
-
-`/owner/purchasing` handles ordering from suppliers: place an order (one
-button adds every ingredient at its reorder point), then receive it by
-entering what actually arrived and what was paid. Only received quantities
-reach stock, prices paid become ingredient costs, and shortfalls are kept
-in the order history. Quantities on open orders show as "on order".
-
-## Tests / verification
-
-No automated test suite yet (v1 pilot scope). Manual verification path:
-seed the demo data, run a few orders through `/counter`, confirm
-`/owner/inventory` reflects the real ingredient decrement, confirm
-`/owner` insights numbers match what you'd compute by hand from the
-same orders.
-
-## v2 (not built yet — see the plan)
-
-Multi-tenancy (`cafe_id` scoping across every table), per-cafe billing,
-and real POS hardware integration (receipt printer, cash drawer) are all
-deliberately deferred until this single-cafe pilot is proven. See
-`CLAUDE.md` for the full reasoning.
+Multiple cafes (a `cafe_id` on every table), billing, and receipt printer
+and cash drawer support all wait until the single-cafe pilot is proven.
