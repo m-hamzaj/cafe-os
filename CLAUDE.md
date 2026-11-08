@@ -1,10 +1,8 @@
 # cafe-os
 
 A single-cafe order-taking, inventory, and AI-insights system — v1 of a
-product eventually meant to be sold/licensed to other cafes. Full
-background and the v1/v2 scope split: see the plan this was built from
-(cafe-os business plan, car-wash/iPhone sibling projects' planning
-sessions).
+product eventually meant to be sold/licensed to other cafes. README.md
+has the feature overview and setup; this file has the rules.
 
 ## Key conventions
 
