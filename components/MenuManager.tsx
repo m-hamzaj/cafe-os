@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { MenuOptionGroup } from "@/lib/types";
-import { formatCostCents, ingredientCostCents } from "@/lib/costs";
+import { formatCostCents, ingredientCostCents, roundCost } from "@/lib/costs";
 import OptionGroupsEditor, {
   toDraftGroups,
   toOptionGroupInput,
@@ -24,11 +24,32 @@ interface InventoryItem {
   unitCostCents: number | null;
 }
 
-/** "cost $0.62 · 16% of price", or why it can't be shown. */
-function costLabel(costCents: number | null | undefined, priceCents: number): string {
-  if (costCents === null || costCents === undefined) return "cost unknown: an ingredient has no cost";
-  if (priceCents <= 0) return `cost ${formatCostCents(costCents)}`;
-  return `cost ${formatCostCents(costCents)} · ${Math.round((costCents / priceCents) * 100)}% of price`;
+/** Ingredient cost and profit per item sold: "Cost $0.69 · Profit $3.31 (83%)".
+ * Profit is price minus ingredient cost, before waste and running costs. */
+function CostProfit({
+  costCents,
+  priceCents,
+  className = "",
+}: {
+  costCents: number | null | undefined;
+  priceCents: number;
+  className?: string;
+}) {
+  if (costCents === null || costCents === undefined) {
+    return <span className={`text-warn ${className}`}>Cost unknown: an ingredient has no cost</span>;
+  }
+  const profit = priceCents - costCents;
+  const margin = priceCents > 0 ? Math.round((profit / priceCents) * 100) : null;
+  return (
+    <span className={className}>
+      <span className="text-muted">Cost {formatCostCents(costCents)}</span>
+      <span className="text-muted"> · </span>
+      <span className={profit < 0 ? "font-semibold text-warn" : "font-semibold text-good"}>
+        Profit {formatCostCents(profit)}
+        {margin !== null && ` (${margin}%)`}
+      </span>
+    </span>
+  );
 }
 
 interface RecipeLine {
@@ -63,6 +84,16 @@ export default function MenuManager({
       (recipeByItem[itemId] ?? []).map((l) => [l.inventoryItemId, l.quantityUsed]),
       costById
     );
+  // How much an option changes one item's ingredient cost: the recipe with the
+  // option's changes applied (floored at zero, like checkout) minus the plain
+  // recipe. Null when an ingredient involved has no cost.
+  const optionCostChange = (itemId: number, adjustments: Array<[number, number]>) => {
+    const usage = new Map((recipeByItem[itemId] ?? []).map((l) => [l.inventoryItemId, l.quantityUsed]));
+    const base = ingredientCostCents(usage, costById);
+    for (const [id, delta] of adjustments) usage.set(id, (usage.get(id) ?? 0) + delta);
+    const withOption = ingredientCostCents(usage, costById);
+    return base === null || withOption === null ? null : roundCost(withOption - base);
+  };
   const [editingId, setEditingId] = useState<number | null>(null);
   const [recipeByItem, setRecipeByItem] = useState<Record<number, RecipeLine[]>>({});
   const [optionsByItem, setOptionsByItem] = useState<Record<number, DraftGroup[]>>({});
@@ -265,8 +296,10 @@ export default function MenuManager({
                       })}
                     </div>
                     {recipeByItem[item.id] && (
-                      <p className="mt-2 text-sm text-muted">
-                        Base recipe {costLabel(recipeCost(item.id), dollarsToCents(draft.price))}. Options can change it.
+                      <p className="mt-2 text-sm">
+                        <span className="text-muted">Base recipe at this price: </span>
+                        <CostProfit costCents={recipeCost(item.id)} priceCents={dollarsToCents(draft.price)} />
+                        <span className="text-muted">. Options can change both.</span>
                       </p>
                     )}
                   </div>
@@ -275,6 +308,7 @@ export default function MenuManager({
                     <OptionGroupsEditor
                       groups={optionsByItem[item.id]}
                       inventoryItems={inventoryItems}
+                      costChange={(adjustments) => optionCostChange(item.id, adjustments)}
                       onChange={(groups) => setOptionsByItem((prev) => ({ ...prev, [item.id]: groups }))}
                     />
                   )}
@@ -305,10 +339,8 @@ export default function MenuManager({
                     )}
                   </span>
                   <span className="flex flex-col items-end text-right">
-                    <span className="text-sm text-muted">{centsToDollars(item.priceCents)}</span>
-                    <span className={`text-xs ${itemCosts[item.id] === null ? "text-warn" : "text-muted"}`}>
-                      {costLabel(itemCosts[item.id], item.priceCents)}
-                    </span>
+                    <span className="text-sm text-ink">Price ${centsToDollars(item.priceCents)}</span>
+                    <CostProfit costCents={itemCosts[item.id]} priceCents={item.priceCents} className="text-xs" />
                   </span>
                 </button>
               )
