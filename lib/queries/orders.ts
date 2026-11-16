@@ -144,6 +144,53 @@ export async function createPaidOrder(input: {
   });
 }
 
+export interface PaymentSplit {
+  cashCents: number;
+  cashOrders: number;
+  cardCents: number;
+  cardOrders: number;
+}
+
+/** Paid sales split by cash and card, for today (on the cafe's calendar) and
+ * the last 7 days, so the cash drawer can be checked against the till. */
+export async function getPaymentSplits(): Promise<{ today: PaymentSplit; week: PaymentSplit }> {
+  const rows = await sql`
+    with paid as (
+      select o.id, o.payment_method, o.created_at, sum(ol.quantity * ol.unit_price_cents) as total
+      from orders o
+      join order_lines ol on ol.order_id = o.id
+      where o.status = 'paid' and o.created_at >= now() - interval '7 days'
+      group by o.id
+    ), today as (
+      select * from paid
+      where created_at >= date_trunc('day', now() AT TIME ZONE ${CAFE_TIMEZONE}) AT TIME ZONE ${CAFE_TIMEZONE}
+    )
+    select 'today' as period,
+           coalesce(sum(total) filter (where payment_method = 'cash'), 0) as cash_cents,
+           count(*) filter (where payment_method = 'cash')::integer as cash_orders,
+           coalesce(sum(total) filter (where payment_method = 'card'), 0) as card_cents,
+           count(*) filter (where payment_method = 'card')::integer as card_orders
+    from today
+    union all
+    select 'week',
+           coalesce(sum(total) filter (where payment_method = 'cash'), 0),
+           count(*) filter (where payment_method = 'cash')::integer,
+           coalesce(sum(total) filter (where payment_method = 'card'), 0),
+           count(*) filter (where payment_method = 'card')::integer
+    from paid
+  `;
+  const toSplit = (r: (typeof rows)[number]): PaymentSplit => ({
+    cashCents: Number(r.cash_cents),
+    cashOrders: r.cash_orders,
+    cardCents: Number(r.card_cents),
+    cardOrders: r.card_orders,
+  });
+  return {
+    today: toSplit(rows.find((r) => r.period === "today")!),
+    week: toSplit(rows.find((r) => r.period === "week")!),
+  };
+}
+
 export async function getOrderHistory(params: {
   from?: Date;
   to?: Date;

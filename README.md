@@ -10,7 +10,8 @@ cafes later.
 
 - **Counter (`/counter`):** fast order taking with menu options like oat
   milk or an extra shot. Tiles are coloured by category. Cashiers can log
-  waste and mark an option out of stock.
+  waste and mark an option out of stock. Each order is saved as cash or
+  card, and the Sales page totals each for today and the last 7 days.
 - **Inventory:** every sale subtracts the ingredients its recipe uses, so a
   latte reduces milk and beans. Waste is logged with a reason. A physical
   count sets stock to what's on the shelf and keeps the difference.
