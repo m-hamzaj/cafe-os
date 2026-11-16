@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatCostCents } from "@/lib/costs";
 import type { CostSummary } from "@/lib/types";
 
@@ -13,6 +14,9 @@ export default function CostsCard({ costs }: { costs: CostSummary }) {
   const grossProfit = costs.costedSalesCents - costs.cogsCents;
   const foodCostPct = hasCostedSales ? Math.round((costs.cogsCents / costs.costedSalesCents) * 100) : null;
   const allCosted = costs.uncostedLines === 0;
+  // Waste is a loss and a negative count difference is missing stock (a
+  // positive one, stock found, adds back). Expenses are rent, wages and bills.
+  const netProfit = grossProfit - costs.wasteCostCents + costs.countDifferenceCents - costs.expensesCents;
 
   const rows: Array<{ label: string; value: string; note?: string; warn?: boolean }> = [
     { label: "Sales", value: formatCostCents(costs.salesCents) },
@@ -43,6 +47,17 @@ export default function CostsCard({ costs }: { costs: CostSummary }) {
       warn: costs.countDifferenceCents < 0,
     },
     {
+      label: "Expenses",
+      value: formatCostCents(costs.expensesCents),
+      note: costs.expensesCents === 0 ? "none entered" : "rent, wages, bills",
+    },
+    {
+      label: "Net profit",
+      value: hasCostedSales ? formatCostCents(netProfit) : "—",
+      note: "after waste, missing stock and expenses",
+      warn: hasCostedSales && netProfit < 0,
+    },
+    {
       label: "Stock on hand",
       value: formatCostCents(costs.stockValueCents),
       note:
@@ -64,6 +79,13 @@ export default function CostsCard({ costs }: { costs: CostSummary }) {
           </div>
         ))}
       </dl>
+      <p className="mt-4 text-xs text-muted">
+        Net profit = gross profit − waste − missing stock − expenses.{" "}
+        <Link href="/owner/expenses" className="text-brand underline">
+          {costs.expensesCents === 0 ? "Add rent, wages and bills" : "See expenses"}
+        </Link>
+        .
+      </p>
       {!allCosted && (
         <p className="mt-4 text-xs text-muted">
           {plural(costs.uncostedLines, "sale line has", "sale lines have")} no cost, because an ingredient had no cost

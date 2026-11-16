@@ -88,6 +88,8 @@ export interface CostSummary {
   uncostedCounts: number;
   stockValueCents: number;
   ingredientsWithoutCost: number;
+  /** Rent, wages and other running costs falling in the same days. */
+  expensesCents: number;
 }
 
 export type StockAdjustmentKind = "waste" | "count";
@@ -149,4 +151,24 @@ export interface OrderWithLines extends Order {
     unitPriceCents: number;
     optionNames: string[];
   }>;
+}
+
+export type ExpenseFrequency = "once" | "weekly" | "monthly";
+
+/** A running cost that isn't an ingredient (rent, wages, bills). */
+export interface Expense {
+  id: number;
+  name: string;
+  amountCents: number;
+  frequency: ExpenseFrequency;
+  /** YYYY-MM-DD. The payment date for a one-off expense. */
+  startsOn: string;
+  /** YYYY-MM-DD, or null while a weekly or monthly expense is still running. */
+  endsOn: string | null;
+  createdAt: string;
+  createdBy: string | null;
+  /** The share of this expense in the cost summary's date range. */
+  rangeCents: number;
+  /** Weekly or monthly and not stopped. */
+  running: boolean;
 }

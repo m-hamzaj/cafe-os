@@ -153,3 +153,12 @@ export const stockAdjustmentSchema = z.discriminatedUnion("kind", [
     note: adjustmentNote,
   }),
 ]);
+
+export const EXPENSE_FREQUENCIES = ["once", "weekly", "monthly"] as const;
+
+export const createExpenseSchema = z.object({
+  name: z.string().trim().min(1, "Enter what the expense is for.").max(80),
+  amountCents: z.number().int().positive("Enter an amount above zero.").max(100_000_000),
+  frequency: z.enum(EXPENSE_FREQUENCIES),
+  startsOn: z.iso.date("Enter a valid date."),
+});

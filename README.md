@@ -14,10 +14,15 @@ cafes later.
 - **Inventory:** every sale subtracts the ingredients its recipe uses, so a
   latte reduces milk and beans. Waste is logged with a reason. A physical
   count sets stock to what's on the shelf and keeps the difference.
-- **Costs:** each ingredient can have a cost. Sales record their cost at the
-  moment they happen, giving cost of goods sold, gross profit, food cost %
-  and per-item margins. Anything sold before a cost existed is shown as not
-  costed, never estimated.
+- **Units:** stock is kept in ml, g or pieces so recipes stay exact, but
+  large amounts show as L and kg, and deliveries, costs and counts can be
+  typed in either.
+- **Costs and profit:** each ingredient can have a cost. Sales record their
+  cost at the moment they happen, giving cost of goods sold, gross profit,
+  food cost % and per-item margins. Anything sold before a cost existed is
+  shown as not costed, never estimated. Rent, wages and bills go on
+  `/owner/expenses`, and the dashboard shows net profit: gross profit minus
+  waste, missing stock and expenses.
 - **Reorder points:** daily usage × supplier lead time + safety stock. Items
   at or below that point are flagged "Reorder now".
 - **Purchase orders (`/owner/purchasing`):** place an order, then receive
@@ -50,11 +55,11 @@ Log in at `/login`: **Owner** PIN `1234`, **Cashier** PIN `1111`.
 
 ```
 db/schema.sql      The whole data model. Read this first
-lib/queries/       SQL per area: menu, orders, inventory, costs, purchasing, insights, staff
+lib/queries/       SQL per area: menu, orders, inventory, costs, expenses, purchasing, insights, staff
 lib/llm/           Groq client and the insights narration
-lib/               Shared rules: costs.ts, reorder.ts, stock-reasons.ts, validation.ts, auth.ts
+lib/               Shared rules: costs.ts, units.ts, reorder.ts, stock-reasons.ts, validation.ts, auth.ts
 app/counter/       Cashier screen
-app/owner/         Insights, sales, menu, inventory, purchasing
+app/owner/         Insights, sales, menu, inventory, purchasing, expenses
 app/api/           Route handlers
 scripts/seed.ts    Demo data
 ```

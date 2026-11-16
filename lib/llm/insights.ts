@@ -1,6 +1,7 @@
 import "server-only";
 import { callGroq, type GroqMessage } from "@/lib/llm/groq-client";
 import { needsReorder } from "@/lib/reorder";
+import { formatAmount } from "@/lib/units";
 import { getCachedInsightSummary, saveInsightSummary, type InsightData } from "@/lib/queries/insights";
 
 // Reopening the dashboard within this window reuses the last summary, which
@@ -36,15 +37,15 @@ function formatInsightData(data: InsightData): string {
         ? "no recent usage, can't estimate runway"
         : `about ${r.daysRemaining.toFixed(1)} days remaining at the current usage rate (sales plus logged waste)`;
     // Something already on order shouldn't be reported as needing an order.
-    const onOrder = `${r.onOrder.toFixed(1)} ${r.unit} already on order and not yet delivered`;
+    const onOrder = `${formatAmount(r.onOrder, r.unit)} already on order and not yet delivered`;
     const reorder = needsReorder(r.currentStock, r.reorderPoint)
       ? r.onOrder > 0
-        ? `; at or below its reorder point of ${r.reorderPoint!.toFixed(1)} ${r.unit}, but ${onOrder}, so no new order is needed`
-        : `; at or below its reorder point of ${r.reorderPoint!.toFixed(1)} ${r.unit} (${r.leadTimeDays}-day supplier lead time), so it should be ordered now`
+        ? `; at or below its reorder point of ${formatAmount(r.reorderPoint!, r.unit)}, but ${onOrder}, so no new order is needed`
+        : `; at or below its reorder point of ${formatAmount(r.reorderPoint!, r.unit)} (${r.leadTimeDays}-day supplier lead time), so it should be ordered now`
       : r.onOrder > 0
         ? `; ${onOrder}`
         : "";
-    lines.push(`- ${r.inventoryItemName}: ${r.currentStock.toFixed(1)} ${r.unit} in stock, ${runway}${reorder}`);
+    lines.push(`- ${r.inventoryItemName}: ${formatAmount(r.currentStock, r.unit)} in stock, ${runway}${reorder}`);
   }
 
   lines.push("\nLOGGED WASTE (last 7 days):");
@@ -53,8 +54,9 @@ function formatInsightData(data: InsightData): string {
   }
   for (const w of data.waste) {
     const entries = w.entries === 1 ? "1 entry" : `${w.entries} entries`;
-    const amount = Number(w.wasted.toFixed(2));
-    lines.push(`- ${w.inventoryItemName}: ${amount} ${w.unit} wasted across ${entries}, most often "${w.topReason}"`);
+    lines.push(
+      `- ${w.inventoryItemName}: ${formatAmount(w.wasted, w.unit)} wasted across ${entries}, most often "${w.topReason}"`
+    );
   }
 
   lines.push("\nSTOCK COUNTS THAT DIDN'T MATCH THE SYSTEM (last 7 days):");
@@ -65,12 +67,12 @@ function formatInsightData(data: InsightData): string {
   }
   for (const c of data.countDifferences) {
     const counts = c.mismatchedCounts === 1 ? "1 count" : `${c.mismatchedCounts} counts`;
-    const amount = Number(Math.abs(c.netDifference).toFixed(2));
+    const amount = formatAmount(Math.abs(c.netDifference), c.unit);
     const direction =
       c.netDifference < 0
-        ? `${amount} ${c.unit} less on the shelf than the system expected (missing, not explained by sales or logged waste)`
+        ? `${amount} less on the shelf than the system expected (missing, not explained by sales or logged waste)`
         : c.netDifference > 0
-          ? `${amount} ${c.unit} more on the shelf than the system expected`
+          ? `${amount} more on the shelf than the system expected`
           : "differences that cancelled out to zero overall";
     // "Not sure" is a valid answer in the count form but reads oddly as a cause.
     const reason = c.topReason === "Not sure" ? "no reason given" : `most often "${c.topReason}"`;

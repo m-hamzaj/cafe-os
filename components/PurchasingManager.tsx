@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { formatCostCents, roundCost } from "@/lib/costs";
 import { CAFE_TIMEZONE } from "@/lib/time";
+import { defaultInputUnit, formatAmount, toInputValue, toStoredQuantity } from "@/lib/units";
 import type { PurchaseOrder } from "@/lib/types";
+import UnitSelect from "./UnitSelect";
 
 interface Ingredient {
   id: number;
@@ -11,24 +13,23 @@ interface Ingredient {
   unit: string;
 }
 
-/** Quantities and total prices are kept as typed text until saved. */
+/** Quantities and total prices are kept as typed text until saved. inUnit is
+ * the unit the quantity is typed in (L or ml, kg or g). */
 interface DraftLine {
   inventoryItemId: string;
   quantity: string;
+  inUnit: string;
   total: string;
 }
 
 interface ReceiveDraft {
   quantity: string;
+  inUnit: string;
   total: string;
   note: string;
 }
 
-const EMPTY_LINE: DraftLine = { inventoryItemId: "", quantity: "", total: "" };
-
-function formatQty(n: number): string {
-  return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
+const EMPTY_LINE: DraftLine = { inventoryItemId: "", quantity: "", inUnit: "", total: "" };
 
 function formatWhen(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -95,7 +96,11 @@ export default function PurchasingManager({
   function addReorderLines() {
     setLines((prev) => [
       ...prev.filter((l) => l.inventoryItemId !== ""),
-      ...toReorder.map((id) => ({ ...EMPTY_LINE, inventoryItemId: String(id) })),
+      ...toReorder.map((id) => ({
+        ...EMPTY_LINE,
+        inventoryItemId: String(id),
+        inUnit: defaultInputUnit(byId.get(id)?.unit ?? ""),
+      })),
     ]);
   }
 
@@ -131,7 +136,8 @@ export default function PurchasingManager({
     if (supplier.trim() === "") return setError("Enter the supplier.");
     if (filled.length === 0) return setError("Add at least one ingredient.");
     const payload = filled.map((l) => {
-      const quantity = Number(l.quantity);
+      const unit = byId.get(Number(l.inventoryItemId))?.unit ?? "";
+      const quantity = l.quantity.trim() === "" ? NaN : toStoredQuantity(Number(l.quantity), l.inUnit, unit);
       return { inventoryItemId: Number(l.inventoryItemId), quantity, unitCostCents: unitCostFrom(l.total, quantity) };
     });
     const bad = payload.find((l) => !Number.isFinite(l.quantity) || l.quantity <= 0);
@@ -151,14 +157,18 @@ export default function PurchasingManager({
     setReceiving({
       orderId: order.id,
       drafts: Object.fromEntries(
-        order.lines.map((l) => [
-          l.id,
-          {
-            quantity: String(l.quantityOrdered),
-            total: l.unitCostCents === null ? "" : ((l.unitCostCents * l.quantityOrdered) / 100).toFixed(2),
-            note: "",
-          },
-        ])
+        order.lines.map((l) => {
+          const ordered = toInputValue(l.quantityOrdered, l.unit);
+          return [
+            l.id,
+            {
+              quantity: ordered.value,
+              inUnit: ordered.inputUnit,
+              total: l.unitCostCents === null ? "" : ((l.unitCostCents * l.quantityOrdered) / 100).toFixed(2),
+              note: "",
+            },
+          ];
+        })
       ),
     });
   }
@@ -167,7 +177,7 @@ export default function PurchasingManager({
     if (!receiving) return;
     const payload = order.lines.map((l) => {
       const d = receiving.drafts[l.id];
-      const quantityReceived = d.quantity.trim() === "" ? NaN : Number(d.quantity);
+      const quantityReceived = d.quantity.trim() === "" ? NaN : toStoredQuantity(Number(d.quantity), d.inUnit, l.unit);
       return {
         lineId: l.id,
         quantityReceived,
@@ -228,7 +238,12 @@ export default function PurchasingManager({
                   Ingredient
                   <select
                     value={line.inventoryItemId}
-                    onChange={(e) => updateLine(index, { inventoryItemId: e.target.value })}
+                    onChange={(e) =>
+                      updateLine(index, {
+                        inventoryItemId: e.target.value,
+                        inUnit: defaultInputUnit(byId.get(Number(e.target.value))?.unit ?? ""),
+                      })
+                    }
                     className={inputClass}
                   >
                     <option value="">Choose…</option>
@@ -244,15 +259,25 @@ export default function PurchasingManager({
                   </select>
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-muted">
-                  Quantity{unit && ` (${unit})`}
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={line.quantity}
-                    onChange={(e) => updateLine(index, { quantity: e.target.value })}
-                    className={inputClass}
-                  />
+                  Quantity
+                  <span className="flex gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(index, { quantity: e.target.value })}
+                      className={`min-w-0 flex-1 ${inputClass}`}
+                    />
+                    {unit && (
+                      <UnitSelect
+                        unit={unit}
+                        value={line.inUnit}
+                        onChange={(u) => updateLine(index, { inUnit: u })}
+                        label="Quantity unit"
+                      />
+                    )}
+                  </span>
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-muted">
                   Total price ($, optional)
@@ -329,25 +354,35 @@ export default function PurchasingManager({
                 {order.lines.map((l) => (
                   <li key={l.id} className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                     <span className="text-ink">
-                      {l.inventoryItemName}: {formatQty(l.quantityOrdered)} {l.unit}
+                      {l.inventoryItemName}: {formatAmount(l.quantityOrdered, l.unit)}
                       {l.unitCostCents !== null && (
                         <span className="text-muted"> · {formatCostCents(l.unitCostCents * l.quantityOrdered)}</span>
                       )}
                     </span>
                     {draft && (
                       <span className="grid grid-cols-3 gap-2 sm:w-[28rem]">
-                        <input
-                          type="number"
-                          min={0}
-                          step="any"
-                          aria-label={`${l.inventoryItemName} received (${l.unit})`}
-                          title={`Received (${l.unit})`}
-                          value={draft[l.id].quantity}
-                          onChange={(e) =>
-                            setReceiving((r) => r && { ...r, drafts: { ...r.drafts, [l.id]: { ...r.drafts[l.id], quantity: e.target.value } } })
-                          }
-                          className={inputClass}
-                        />
+                        <span className="flex gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            step="any"
+                            aria-label={`${l.inventoryItemName} received (${draft[l.id].inUnit})`}
+                            title={`Received (${draft[l.id].inUnit})`}
+                            value={draft[l.id].quantity}
+                            onChange={(e) =>
+                              setReceiving((r) => r && { ...r, drafts: { ...r.drafts, [l.id]: { ...r.drafts[l.id], quantity: e.target.value } } })
+                            }
+                            className={`min-w-0 flex-1 ${inputClass}`}
+                          />
+                          <UnitSelect
+                            unit={l.unit}
+                            value={draft[l.id].inUnit}
+                            onChange={(u) =>
+                              setReceiving((r) => r && { ...r, drafts: { ...r.drafts, [l.id]: { ...r.drafts[l.id], inUnit: u } } })
+                            }
+                            label={`${l.inventoryItemName} received unit`}
+                          />
+                        </span>
                         <input
                           type="number"
                           min={0}
@@ -459,9 +494,10 @@ export default function PurchasingManager({
                           : 0;
                       return (
                         <li key={l.id}>
-                          {l.inventoryItemName}: {order.status === "received" ? `${formatQty(l.quantityReceived ?? 0)} of ` : ""}
-                          {formatQty(l.quantityOrdered)} {l.unit}
-                          {short > 0 && <span className="text-warn"> · {formatQty(short)} short</span>}
+                          {l.inventoryItemName}:{" "}
+                          {order.status === "received" ? `${formatAmount(l.quantityReceived ?? 0, l.unit)} of ` : ""}
+                          {formatAmount(l.quantityOrdered, l.unit)}
+                          {short > 0 && <span className="text-warn"> · {formatAmount(short, l.unit)} short</span>}
                           {l.receiveNote && ` · ${l.receiveNote}`}
                         </li>
                       );

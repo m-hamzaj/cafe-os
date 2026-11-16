@@ -63,6 +63,16 @@ has the feature overview and setup; this file has the rules.
   cost to the price paid, and closes the order even if lines came up short.
   Quantities on open orders show as "on order" and suppress "reorder now"
   advice, including in the AI summary.
+- **Quantities are stored in the ingredient's own unit (ml, g, each).**
+  `lib/units.ts` only changes display and input: amounts from 1000 ml/g
+  show as L/kg, costs show per L/kg, and inputs can be typed in either via
+  `UnitSelect`, converted with `toStoredQuantity()` before sending. Never
+  send an L or kg number to the API, and keep recipes in ml/g.
+- **Net profit = gross profit − waste + count differences − expenses.**
+  Expenses (`expenses` table, `/owner/expenses`) are rent, wages and bills:
+  one-off on a date, or weekly/monthly spread evenly per day (monthly ×
+  12 ÷ 365) until stopped. `getExpenses()` works out each one's share of
+  the cost summary's days in SQL; `getCostSummary()` sums those shares.
 - **Checkout never blocks on inventory.** `createPaidOrder()` in
   `lib/queries/orders.ts` lets stock go negative rather than refuse a
   sale — a cafe counter can't turn away a paying customer over a

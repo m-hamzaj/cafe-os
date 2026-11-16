@@ -19,7 +19,7 @@ async function main() {
   await sql.unsafe(schemaSql);
 
   console.log("Clearing existing demo data (safe to re-run)...");
-  await sql`truncate table insight_summary_cache, purchase_order_lines, purchase_orders, stock_adjustments, order_line_options, order_lines, orders, stock_entries, option_recipe_adjustments, menu_options, menu_option_groups, recipe_lines, menu_items, inventory_items, staff restart identity cascade`;
+  await sql`truncate table expenses, insight_summary_cache, purchase_order_lines, purchase_orders, stock_adjustments, order_line_options, order_lines, orders, stock_entries, option_recipe_adjustments, menu_options, menu_option_groups, recipe_lines, menu_items, inventory_items, staff restart identity cascade`;
 
   console.log("Seeding staff...");
   const ownerPinHash = await hashPin("1234");
@@ -282,6 +282,15 @@ async function main() {
       values (${po.id}, ${inventoryIds[ingredientName]}, ${quantity}, ${costByName[ingredientName]})
     `;
   }
+
+  console.log("Seeding expenses...");
+  // Rent and wages that started before the order history, so the dashboard's
+  // net profit has a realistic share of each in its 7 days.
+  await sql`
+    insert into expenses (name, amount_cents, frequency, starts_on, created_by)
+    values ('Rent', 60000, 'monthly', current_date - 60, ${ownerId}),
+           ('Part-time wages', 20000, 'weekly', current_date - 60, ${ownerId})
+  `;
 
   console.log("\nSeed complete.");
   console.log("Log in at /login as:");

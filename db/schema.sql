@@ -187,6 +187,21 @@ create table if not exists insight_summary_cache (
   generated_at  timestamptz not null default now()
 );
 
+-- Running costs that aren't ingredients (rent, wages, bills), for net profit.
+-- 'once' is a single payment on starts_on; 'weekly' and 'monthly' are spread
+-- evenly over the days they cover, from starts_on until ends_on (null means
+-- still running), so any date range gets its share.
+create table if not exists expenses (
+  id            serial primary key,
+  name          text not null,
+  amount_cents  integer not null check (amount_cents > 0),
+  frequency     text not null check (frequency in ('once', 'weekly', 'monthly')),
+  starts_on     date not null,
+  ends_on       date check (ends_on is null or ends_on >= starts_on),
+  created_by    integer references staff(id),
+  created_at    timestamptz not null default now()
+);
+
 create index if not exists idx_order_lines_order_id on order_lines(order_id);
 create index if not exists idx_order_lines_menu_item_id on order_lines(menu_item_id);
 create index if not exists idx_orders_created_at on orders(created_at);
