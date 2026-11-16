@@ -1,5 +1,6 @@
 "use client";
 
+import { formatCostCents } from "@/lib/costs";
 import type { MenuOptionGroup } from "@/lib/types";
 
 interface InventoryChoice {
@@ -91,13 +92,33 @@ export function toOptionGroupInput(groups: DraftGroup[]) {
 
 const inputClass = "rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink";
 
+/** "Cost +$0.36 · Profit +$0.14" for one option, from its price change and
+ * what its ingredient changes cost. */
+function OptionCostProfit({ priceCents, costCents }: { priceCents: number; costCents: number | null }) {
+  if (costCents === null) {
+    return <p className="mt-2 text-xs text-warn">Cost unknown: an ingredient it uses has no cost</p>;
+  }
+  const signed = (c: number) => `${c >= 0 ? "+" : "−"}${formatCostCents(Math.abs(c))}`;
+  const profit = priceCents - costCents;
+  return (
+    <p className="mt-2 text-xs">
+      <span className="text-muted">Cost {signed(costCents)} · </span>
+      <span className={profit < 0 ? "font-semibold text-warn" : "font-semibold text-good"}>Profit {signed(profit)}</span>
+      <span className="text-muted"> per item</span>
+    </p>
+  );
+}
+
 export default function OptionGroupsEditor({
   groups,
   inventoryItems,
+  costChange,
   onChange,
 }: {
   groups: DraftGroup[];
   inventoryItems: InventoryChoice[];
+  /** How an option's ingredient changes affect one item's cost, or null if unknown. */
+  costChange?: (adjustments: Array<[inventoryItemId: number, quantityDelta: number]>) => number | null;
   onChange: (groups: DraftGroup[]) => void;
 }) {
   function updateGroup(key: number, patch: Partial<DraftGroup>) {
@@ -242,6 +263,17 @@ export default function OptionGroupsEditor({
                         </div>
                       );
                     })}
+
+                    {costChange && (
+                      <OptionCostProfit
+                        priceCents={Number.isFinite(Number(option.price)) ? Math.round(Number(option.price) * 100) : 0}
+                        costCents={costChange(
+                          option.adjustments
+                            .map((a): [number, number] => [a.inventoryItemId, Number(a.quantityDelta)])
+                            .filter(([, d]) => Number.isFinite(d) && d !== 0)
+                        )}
+                      />
+                    )}
 
                     {unusedInventory.length > 0 && (
                       <select
