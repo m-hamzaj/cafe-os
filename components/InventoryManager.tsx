@@ -5,22 +5,28 @@ import { COUNT_REASONS, WASTE_REASONS } from "@/lib/stock-reasons";
 import { CAFE_TIMEZONE } from "@/lib/time";
 import { formatCostCents, roundCost } from "@/lib/costs";
 import { needsReorder, reorderPoint } from "@/lib/reorder";
+import {
+  defaultInputUnit,
+  formatAmount,
+  formatSignedAmount,
+  formatUnitCost,
+  toInputValue,
+  toStoredQuantity,
+} from "@/lib/units";
 import type { InventoryActivity, InventoryItem, StockAdjustment } from "@/lib/types";
+import UnitSelect from "./UnitSelect";
 
 type PanelKind = "waste" | "count" | "cost" | "reorder";
 type Panel = { itemId: number; kind: PanelKind } | null;
 
 // For the cost panel, amount is what was paid in dollars and quantity is how
 // much of the ingredient that bought. The reorder panel reuses them for lead
-// time and safety stock.
-const EMPTY_FORM = { amount: "", quantity: "", reason: "", note: "" };
+// time and safety stock. inUnit is the unit the quantity (or, for waste and
+// counts, the amount) is typed in: ml or L, g or kg.
+const EMPTY_FORM = { amount: "", quantity: "", reason: "", note: "", inUnit: "" };
 
 function formatQty(n: number): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
-
-function formatSigned(n: number): string {
-  return `${n > 0 ? "+" : n < 0 ? "−" : ""}${formatQty(Math.abs(n))}`;
 }
 
 function formatWhen(iso: string): string {
@@ -62,6 +68,7 @@ export default function InventoryManager({
   const [activity, setActivity] = useState(initialActivity);
   const [adjustments, setAdjustments] = useState(initialAdjustments);
   const [restockAmount, setRestockAmount] = useState<Record<number, string>>({});
+  const [restockUnit, setRestockUnit] = useState<Record<number, string>>({});
   const [newItem, setNewItem] = useState({ name: "", unit: "", threshold: "" });
   const [panel, setPanel] = useState<Panel>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -69,8 +76,9 @@ export default function InventoryManager({
   const [error, setError] = useState<string | null>(null);
 
   async function restock(item: InventoryItem) {
-    const amount = Number(restockAmount[item.id]);
-    if (!amount || amount <= 0) return;
+    const typed = Number(restockAmount[item.id]);
+    if (!typed || typed <= 0) return;
+    const amount = toStoredQuantity(typed, restockUnit[item.id] ?? defaultInputUnit(item.unit), item.unit);
     setError(null);
     const res = await fetch("/api/inventory/restock", {
       method: "POST",
@@ -137,12 +145,12 @@ export default function InventoryManager({
 
   function submitCost(item: InventoryItem) {
     const paid = Number(form.amount);
-    const quantity = Number(form.quantity);
+    const quantity = toStoredQuantity(Number(form.quantity), form.inUnit, item.unit);
     if (form.amount.trim() === "" || !Number.isFinite(paid) || paid < 0) {
       return setError("Enter what you paid, in dollars.");
     }
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      return setError(`Enter how many ${item.unit} that bought.`);
+      return setError(`Enter how much (${form.inUnit}) that bought.`);
     }
     saveSettings(item, { unitCostCents: roundCost((paid * 100) / quantity) });
   }
@@ -151,12 +159,12 @@ export default function InventoryManager({
   // the safety stock.
   function submitReorder(item: InventoryItem) {
     const lead = Number(form.amount);
-    const safety = form.quantity.trim() === "" ? 0 : Number(form.quantity);
+    const safety = form.quantity.trim() === "" ? 0 : toStoredQuantity(Number(form.quantity), form.inUnit, item.unit);
     if (form.amount.trim() === "" || !Number.isFinite(lead) || lead < 0) {
       return setError("Enter how many days a delivery takes.");
     }
     if (!Number.isFinite(safety) || safety < 0) {
-      return setError(`Enter the safety stock in ${item.unit}, or leave it empty for none.`);
+      return setError(`Enter the safety stock in ${form.inUnit}, or leave it empty for none.`);
     }
     saveSettings(item, { leadTimeDays: lead, safetyStock: safety });
   }
@@ -164,13 +172,18 @@ export default function InventoryManager({
   function openPanel(itemId: number, kind: PanelKind) {
     setError(null);
     const item = items.find((i) => i.id === itemId);
+    const unit = item?.unit ?? "";
+    // Waste is usually small (a spilled 200 ml), so it's typed in ml/g; the
+    // rest default to L/kg.
+    const inUnit = kind === "waste" ? unit : defaultInputUnit(unit);
     // The reorder panel starts from the current settings, so a tweak doesn't
     // mean retyping both numbers.
-    setForm(
-      kind === "reorder" && item?.leadTimeDays !== null && item?.leadTimeDays !== undefined
-        ? { ...EMPTY_FORM, amount: String(item.leadTimeDays), quantity: String(item.safetyStock ?? "") }
-        : EMPTY_FORM
-    );
+    if (kind === "reorder" && item?.leadTimeDays !== null && item?.leadTimeDays !== undefined) {
+      const safety = item.safetyStock ? toInputValue(item.safetyStock, unit) : { value: "", inputUnit: inUnit };
+      setForm({ ...EMPTY_FORM, amount: String(item.leadTimeDays), quantity: safety.value, inUnit: safety.inputUnit });
+    } else {
+      setForm({ ...EMPTY_FORM, inUnit });
+    }
     setPanel(panel?.itemId === itemId && panel.kind === kind ? null : { itemId, kind });
   }
 
@@ -179,7 +192,7 @@ export default function InventoryManager({
       setError(kind === "waste" ? "Enter how much was wasted." : "Enter what's on the shelf.");
       return;
     }
-    const amount = Number(form.amount);
+    const amount = toStoredQuantity(Number(form.amount), form.inUnit, item.unit);
     const payload =
       kind === "waste"
         ? { kind, inventoryItemId: item.id, quantity: amount, reason: form.reason || undefined, note: form.note }
@@ -246,7 +259,10 @@ export default function InventoryManager({
           const low = item.currentStock <= item.lowStockThreshold;
           const stats = activity[item.id] ?? { wasted: 0, countVariance: 0, daysSinceCount: null };
           const open = panel?.itemId === item.id ? panel.kind : null;
-          const counted = open === "count" && form.amount.trim() !== "" ? Number(form.amount) : null;
+          const counted =
+            open === "count" && form.amount.trim() !== ""
+              ? toStoredQuantity(Number(form.amount), form.inUnit, item.unit)
+              : null;
           const difference = counted === null || Number.isNaN(counted) ? null : counted - item.currentStock;
           const showCountReason = difference !== null && Math.abs(difference) > 1e-9;
           const usage = usageRates[item.id] ?? 0;
@@ -273,16 +289,16 @@ export default function InventoryManager({
                       ))}
                   </p>
                   <p className="text-sm text-muted">
-                    {formatQty(item.currentStock)} {item.unit} on hand · alert below {formatQty(item.lowStockThreshold)}{" "}
-                    {item.unit}
-                    {incoming > 0 && ` · ${formatQty(incoming)} ${item.unit} on order`}
+                    {formatAmount(item.currentStock, item.unit)} on hand · alert below{" "}
+                    {formatAmount(item.lowStockThreshold, item.unit)}
+                    {incoming > 0 && ` · ${formatAmount(incoming, item.unit)} on order`}
                   </p>
                   <p className="text-xs text-muted">
                     {countedLabel(stats.daysSinceCount)}
-                    {stats.wasted > 0 && ` · ${formatQty(stats.wasted)} ${item.unit} wasted`}
+                    {stats.wasted > 0 && ` · ${formatAmount(stats.wasted, item.unit)} wasted`}
                     {stats.countVariance !== 0 && (
                       <span className={stats.countVariance < 0 ? "text-warn" : undefined}>
-                        {` · counts ${formatSigned(stats.countVariance)} ${item.unit}`}
+                        {` · counts ${formatSignedAmount(stats.countVariance, item.unit)}`}
                       </span>
                     )}
                     {(stats.wasted > 0 || stats.countVariance !== 0) && ` (${lookbackDays} days)`}
@@ -292,7 +308,7 @@ export default function InventoryManager({
                       <span className="text-warn">No cost set</span>
                     ) : (
                       <>
-                        Cost {formatCostCents(item.unitCostCents)} per {item.unit}
+                        Cost {formatUnitCost(item.unitCostCents, item.unit)}
                         {item.currentStock > 0 &&
                           ` · stock worth ${formatCostCents(item.currentStock * item.unitCostCents)}`}
                       </>
@@ -303,9 +319,9 @@ export default function InventoryManager({
                       "No reorder point: set a lead time"
                     ) : (
                       <span className={reorderNow ? "text-warn" : undefined}>
-                        Reorder at {formatQty(point)} {item.unit} ({formatQty(usage)}/day × {formatQty(item.leadTimeDays!)}{" "}
-                        {item.leadTimeDays === 1 ? "day" : "days"}
-                        {item.safetyStock ? ` + ${formatQty(item.safetyStock)} safety` : ""})
+                        Reorder at {formatAmount(point, item.unit)} ({formatAmount(usage, item.unit)}/day ×{" "}
+                        {formatQty(item.leadTimeDays!)} {item.leadTimeDays === 1 ? "day" : "days"}
+                        {item.safetyStock ? ` + ${formatAmount(item.safetyStock, item.unit)} safety` : ""})
                       </span>
                     )}
                   </p>
@@ -320,6 +336,12 @@ export default function InventoryManager({
                     value={restockAmount[item.id] ?? ""}
                     onChange={(e) => setRestockAmount((prev) => ({ ...prev, [item.id]: e.target.value }))}
                     className="w-20 rounded-lg border border-line bg-bg px-2 py-1 text-right text-sm text-ink"
+                  />
+                  <UnitSelect
+                    unit={item.unit}
+                    value={restockUnit[item.id] ?? defaultInputUnit(item.unit)}
+                    onChange={(u) => setRestockUnit((prev) => ({ ...prev, [item.id]: u }))}
+                    label={`Restock unit for ${item.name}`}
                   />
                   <button onClick={() => restock(item)} className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white">
                     Restock
@@ -367,7 +389,7 @@ export default function InventoryManager({
                 <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
                   <p className="text-sm text-muted">
                     Reorder point = daily usage × days a delivery takes + safety stock. Usage is the last {lookbackDays}{" "}
-                    days of sales plus logged waste: {formatQty(usage)} {item.unit} a day.
+                    days of sales plus logged waste: {formatAmount(usage, item.unit)} a day.
                   </p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <label className="flex flex-col gap-1 text-xs text-muted">
@@ -383,19 +405,34 @@ export default function InventoryManager({
                       />
                     </label>
                     <label className="flex flex-col gap-1 text-xs text-muted">
-                      Safety stock ({item.unit}, optional)
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        value={form.quantity}
-                        onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
-                        className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
-                      />
+                      Safety stock (optional)
+                      <span className="flex gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={form.quantity}
+                          onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
+                          className="min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                        />
+                        <UnitSelect
+                          unit={item.unit}
+                          value={form.inUnit}
+                          onChange={(u) => setForm((f) => ({ ...f, inUnit: u }))}
+                          label="Safety stock unit"
+                        />
+                      </span>
                     </label>
                     <p className="self-end pb-2 text-sm text-muted">
                       {form.amount.trim() !== "" && Number(form.amount) >= 0 && Number(form.quantity || 0) >= 0
-                        ? `= reorder at ${formatQty(reorderPoint(usage, Number(form.amount), Number(form.quantity || 0))!)} ${item.unit}`
+                        ? `= reorder at ${formatAmount(
+                            reorderPoint(
+                              usage,
+                              Number(form.amount),
+                              toStoredQuantity(Number(form.quantity || 0), form.inUnit, item.unit)
+                            )!,
+                            item.unit
+                          )}`
                         : ""}
                     </p>
                   </div>
@@ -426,8 +463,8 @@ export default function InventoryManager({
               {open === "cost" && (
                 <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
                   <p className="text-sm text-muted">
-                    Enter a recent purchase, for example $4.00 for 1000 {item.unit}. Only sales, waste and counts from now
-                    on use the new cost.
+                    Enter a recent purchase, for example $4.00 for 1 {defaultInputUnit(item.unit)}. Only sales, waste and
+                    counts from now on use the new cost.
                   </p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <label className="flex flex-col gap-1 text-xs text-muted">
@@ -443,19 +480,30 @@ export default function InventoryManager({
                       />
                     </label>
                     <label className="flex flex-col gap-1 text-xs text-muted">
-                      For how much ({item.unit})
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        value={form.quantity}
-                        onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
-                        className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
-                      />
+                      For how much
+                      <span className="flex gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={form.quantity}
+                          onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
+                          className="min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                        />
+                        <UnitSelect
+                          unit={item.unit}
+                          value={form.inUnit}
+                          onChange={(u) => setForm((f) => ({ ...f, inUnit: u }))}
+                          label="Purchase unit"
+                        />
+                      </span>
                     </label>
                     <p className="self-end pb-2 text-sm text-muted">
                       {Number(form.quantity) > 0 && form.amount.trim() !== "" && Number(form.amount) >= 0
-                        ? `= ${formatCostCents((Number(form.amount) * 100) / Number(form.quantity))} per ${item.unit}`
+                        ? `= ${formatUnitCost(
+                            (Number(form.amount) * 100) / toStoredQuantity(Number(form.quantity), form.inUnit, item.unit),
+                            item.unit
+                          )}`
                         : ""}
                     </p>
                   </div>
@@ -487,16 +535,24 @@ export default function InventoryManager({
                 <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <label className="flex flex-col gap-1 text-xs text-muted">
-                      {open === "waste" ? `Amount wasted (${item.unit})` : `On the shelf (${item.unit})`}
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        autoFocus
-                        value={form.amount}
-                        onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                        className="rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
-                      />
+                      {open === "waste" ? "Amount wasted" : "On the shelf"}
+                      <span className="flex gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          autoFocus
+                          value={form.amount}
+                          onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                          className="min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                        />
+                        <UnitSelect
+                          unit={item.unit}
+                          value={form.inUnit}
+                          onChange={(u) => setForm((f) => ({ ...f, inUnit: u }))}
+                          label={open === "waste" ? "Waste unit" : "Count unit"}
+                        />
+                      </span>
                     </label>
                     {(open === "waste" || showCountReason) && (
                       <label className="flex flex-col gap-1 text-xs text-muted">
@@ -527,12 +583,12 @@ export default function InventoryManager({
                   </div>
                   {open === "count" && (
                     <p className="text-sm text-muted">
-                      System expects {formatQty(item.currentStock)} {item.unit}.
+                      System expects {formatAmount(item.currentStock, item.unit)}.
                       {difference !== null &&
                         (showCountReason ? (
                           <span className={difference < 0 ? "text-warn" : "text-ink"}>
                             {" "}
-                            Difference: {formatSigned(difference)} {item.unit}. Stock will be set to what you counted.
+                            Difference: {formatSignedAmount(difference, item.unit)}. Stock will be set to what you counted.
                           </span>
                         ) : (
                           <span className="text-good"> Matches.</span>
@@ -571,16 +627,17 @@ export default function InventoryManager({
                   <span className="font-medium text-ink">{a.inventoryItemName}</span>{" "}
                   {a.kind === "waste" ? (
                     <span className="text-ink">
-                      wasted {formatQty(-a.quantityChange)} {a.unit}
+                      wasted {formatAmount(-a.quantityChange, a.unit)}
                     </span>
                   ) : (
                     <span className="text-ink">
-                      counted {formatQty(a.countedStock ?? 0)} {a.unit}, system had {formatQty(a.expectedStock)}{" "}
+                      counted {formatAmount(a.countedStock ?? 0, a.unit)}, system had{" "}
+                      {formatAmount(a.expectedStock, a.unit)}{" "}
                       {a.quantityChange === 0 ? (
                         <span className="text-good">(matched)</span>
                       ) : (
                         <span className={a.quantityChange < 0 ? "text-warn" : undefined}>
-                          ({formatSigned(a.quantityChange)} {a.unit})
+                          ({formatSignedAmount(a.quantityChange, a.unit)})
                         </span>
                       )}
                     </span>

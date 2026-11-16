@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import CostsCard from "@/components/CostsCard";
 import type { CostSummary } from "@/lib/types";
 import { needsReorder } from "@/lib/reorder";
+import { formatAmount } from "@/lib/units";
 
 interface TopSeller {
   menuItemName: string;
@@ -113,7 +114,7 @@ export default function InsightsPanel() {
                 {r.inventoryItemName}:{" "}
                 {r.onOrder > 0 ? (
                   <span className="font-semibold text-ink">
-                    {r.onOrder.toFixed(1)} {r.unit} on order,{" "}
+                    {formatAmount(r.onOrder, r.unit)} on order,{" "}
                   </span>
                 ) : (
                   needsReorder(r.currentStock, r.reorderPoint) && (
@@ -121,9 +122,9 @@ export default function InsightsPanel() {
                   )
                 )}
                 {r.daysRemaining === null ? "no recent usage" : `~${r.daysRemaining.toFixed(1)} days left`} (
-                {r.currentStock.toFixed(1)} {r.unit}
+                {formatAmount(r.currentStock, r.unit)}
                 {needsReorder(r.currentStock, r.reorderPoint) &&
-                  `, reorder point ${r.reorderPoint!.toFixed(1)}, ${r.leadTimeDays}-day lead time`}
+                  `, reorder point ${formatAmount(r.reorderPoint!, r.unit)}, ${r.leadTimeDays}-day lead time`}
                 )
               </li>
             ))}

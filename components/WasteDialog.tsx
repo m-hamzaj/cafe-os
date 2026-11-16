@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { WASTE_REASONS } from "@/lib/stock-reasons";
+import { formatAmount, inputUnits, toStoredQuantity } from "@/lib/units";
 
 interface Ingredient {
   id: number;
@@ -9,7 +10,8 @@ interface Ingredient {
   unit: string;
 }
 
-const EMPTY_FORM = { itemId: "", amount: "", reason: "", note: "" };
+// inUnit is the unit the amount is typed in; empty means the ingredient's own.
+const EMPTY_FORM = { itemId: "", amount: "", inUnit: "", reason: "", note: "" };
 
 /** Lets anyone at the counter log waste (a spill, a remake, expired milk)
  * without leaving the order screen. Stays open after saving so several
@@ -39,10 +41,12 @@ export default function WasteDialog({ onClose }: { onClose: () => void }) {
   }, []);
 
   const selected = ingredients?.find((i) => String(i.id) === form.itemId);
+  const inUnit = selected ? form.inUnit || selected.unit : "";
 
   async function save() {
     if (!selected) return setError("Choose what was wasted.");
     if (form.amount.trim() === "") return setError("Enter how much was wasted.");
+    const quantity = toStoredQuantity(Number(form.amount), inUnit, selected.unit);
     setSaving(true);
     setError(null);
     setLogged(null);
@@ -53,7 +57,7 @@ export default function WasteDialog({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({
           kind: "waste",
           inventoryItemId: selected.id,
-          quantity: Number(form.amount),
+          quantity,
           reason: form.reason || undefined,
           note: form.note,
         }),
@@ -63,7 +67,9 @@ export default function WasteDialog({ onClose }: { onClose: () => void }) {
         setError(body.error ?? "Couldn't log the waste.");
         return;
       }
-      setLogged(`Logged ${form.amount} ${selected.unit} of ${selected.name} (${form.reason.toLowerCase()}).`);
+      setLogged(
+        `Logged ${formatAmount(quantity, selected.unit)} of ${selected.name}${form.reason ? ` (${form.reason.toLowerCase()})` : ""}.`
+      );
       setForm(EMPTY_FORM);
     } catch {
       setError("Couldn't log the waste. Check the connection and try again.");
@@ -97,7 +103,7 @@ export default function WasteDialog({ onClose }: { onClose: () => void }) {
           <select
             value={form.itemId}
             disabled={!ingredients}
-            onChange={(e) => setForm((f) => ({ ...f, itemId: e.target.value }))}
+            onChange={(e) => setForm((f) => ({ ...f, itemId: e.target.value, inUnit: "" }))}
             className={fieldClass}
           >
             <option value="">{ingredients ? "Choose…" : "Loading…"}</option>
@@ -111,16 +117,35 @@ export default function WasteDialog({ onClose }: { onClose: () => void }) {
 
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm text-muted">
-            Amount{selected && ` (${selected.unit})`}
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step="any"
-              value={form.amount}
-              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-              className={fieldClass}
-            />
+            Amount
+            <span className="flex gap-2">
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                value={form.amount}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                className={`min-w-0 flex-1 ${fieldClass}`}
+              />
+              {selected &&
+                (inputUnits(selected.unit).length > 1 ? (
+                  <select
+                    aria-label="Amount unit"
+                    value={inUnit}
+                    onChange={(e) => setForm((f) => ({ ...f, inUnit: e.target.value }))}
+                    className={fieldClass}
+                  >
+                    {inputUnits(selected.unit).map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="self-center text-base">{selected.unit}</span>
+                ))}
+            </span>
           </label>
           <label className="flex flex-col gap-1 text-sm text-muted">
             Reason

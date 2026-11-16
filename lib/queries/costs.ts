@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "@/lib/db";
+import { getExpenses } from "@/lib/queries/expenses";
 import type { CostSummary } from "@/lib/types";
 
 export const COST_LOOKBACK_DAYS = 7;
@@ -14,7 +15,7 @@ export const COST_LOOKBACK_DAYS = 7;
  * instead of being estimated.
  */
 export async function getCostSummary(): Promise<CostSummary> {
-  const [[sales], [adjustments], [stock]] = await Promise.all([
+  const [[sales], [adjustments], [stock], expenses] = await Promise.all([
     sql`
       select coalesce(sum(ol.quantity * ol.unit_price_cents), 0) as sales_cents,
              coalesce(sum(ol.quantity * ol.unit_price_cents) filter (where ol.unit_cost_cents is not null), 0)
@@ -42,6 +43,7 @@ export async function getCostSummary(): Promise<CostSummary> {
              count(*) filter (where unit_cost_cents is null)::integer as ingredients_without_cost
       from inventory_items
     `,
+    getExpenses(COST_LOOKBACK_DAYS),
   ]);
 
   return {
@@ -56,6 +58,7 @@ export async function getCostSummary(): Promise<CostSummary> {
     uncostedCounts: adjustments.uncosted_counts,
     stockValueCents: Number(stock.stock_value_cents),
     ingredientsWithoutCost: stock.ingredients_without_cost,
+    expensesCents: expenses.reduce((sum, e) => sum + e.rangeCents, 0),
   };
 }
 
