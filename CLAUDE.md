@@ -83,6 +83,14 @@ has the feature overview and setup; this file has the rules.
   owner's editor only sends stock status when the owner changed it. The
   flip can also apply across the menu, matching on option name plus group
   name; `setOptionAvailability()` and `otherItemsToSync()` must agree on that.
+- **The MCP server (`mcp/`) reuses `lib/queries`, never its own SQL for
+  figures the app already computes.** Same no-invented-numbers contract as
+  the AI summary: derived values (profit, margin %) are worked out in
+  `mcp/tools.ts` with the app's own formulas, never left to the model. Every
+  tool is read-only except `confirm_purchase_order`, which only registers
+  with `CAFE_OS_MCP_ALLOW_WRITES=1` and only saves a draft previewed by
+  `draft_purchase_order`. A new write tool must follow the same draft then
+  confirm pattern. stdout is the protocol, so nothing in it may log there.
 - **Cache Components is off** (`next.config.ts`) — this whole app is
   authenticated, per-request data with nothing to statically prerender.
   Don't re-enable it without restructuring every data-fetching page
