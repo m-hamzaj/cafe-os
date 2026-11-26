@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "cafe-os": {
+      "command": "node",
+      "args": ["node_modules/tsx/dist/cli.mjs", "--conditions=react-server", "mcp/server.ts"],
+      "env": {
+        "CAFE_OS_MCP_ALLOW_WRITES": "0"
+      }
+    }
+  }
+}

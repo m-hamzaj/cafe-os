@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:seed": "dotenv -e .env.local -- tsx scripts/seed.ts"
+    "db:seed": "dotenv -e .env.local -- tsx scripts/seed.ts",
+    "mcp": "tsx --conditions=react-server mcp/server.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "groq-sdk": "^1.6.0",
     "next": "16.4.5",
     "postgres": "^4.0.0",
